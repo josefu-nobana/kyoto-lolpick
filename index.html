@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LoL Esports Broadcast Draft & Fearless Draft Overlay</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+JP:wght@500;700;900&family=Teko:wght@600;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            orbitron: ['Orbitron', 'sans-serif'],
+            noto: ['Noto Sans JP', 'sans-serif'],
+            teko: ['Teko', 'sans-serif'],
+          },
+          colors: {
+            lolRed: '#e84057',
+            lolRedDark: '#9e2333',
+            lolBlue: '#0ac8b9',
+            lolBlueDark: '#0397ab',
+            lolGold: '#c8aa6e',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #050811;
+      color: #ffffff;
+      font-family: 'Noto Sans JP', sans-serif;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    /* 16:9 1920x1080 Container Aspect Locking */
+    .broadcast-screen {
+      width: 1920px;
+      height: 1080px;
+      position: relative;
+      background: linear-gradient(180deg, #070a0f 0%, #0c121d 100%);
+      overflow: hidden;
+      box-shadow: 0 0 50px rgba(0,0,0,0.9);
+    }
+
+    /* Scanlines effect */
+    .scanlines {
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                  linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+      background-size: 100% 3px, 6px 100%;
+      pointer-events: none;
+    }
+
+    /* Side Overlays */
+    .champ-overlay-red {
+      background: linear-gradient(90deg, rgba(28, 12, 22, 0.95) 0%, rgba(232, 64, 87, 0.2) 60%, rgba(28, 12, 22, 0.9) 100%);
+    }
+    .champ-overlay-blue {
+      background: linear-gradient(-90deg, rgba(9, 20, 40, 0.95) 0%, rgba(10, 200, 185, 0.2) 60%, rgba(9, 20, 40, 0.9) 100%);
+    }
+
+    /* Ban diagonal strike line */
+    .ban-card {
+      position: relative;
+    }
+    .ban-card::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: -20%;
+      width: 140%;
+      height: 3px;
+      background-color: #ff3333;
+      transform: rotate(-45deg);
+      box-shadow: 0 0 8px #ff0000;
+    }
+
+    /* Active Glow Effect */
+    .active-glow-red {
+      box-shadow: 0 0 15px rgba(232, 64, 87, 0.8) inset, 0 0 15px rgba(232, 64, 87, 0.6);
+      border-color: #e84057 !important;
+    }
+    .active-glow-blue {
+      box-shadow: 0 0 15px rgba(10, 200, 185, 0.8) inset, 0 0 15px rgba(10, 200, 185, 0.6);
+      border-color: #0ac8b9 !important;
+    }
+
+    /* Custom scrollbar for admin panel */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+
+    /* Responsive scaling helper */
+    .scaling-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      width: 100vw;
+      background-color: #000;
+    }
+  </style>
+</head>
+<body class="bg-black text-white">
+
+  <!-- TOP OBS CONTROL BAR REMOVED FOR CLEAN BROADCAST OUTPUT -->
+
+  <!-- ADMIN MANAGEMENT PANEL (Floating Drawer Trigger Button) -->
+  <button onclick="toggleAdminPanel()" class="fixed top-2 left-2 z-50 bg-slate-900/80 hover:bg-slate-800 text-lolGold border border-slate-700/80 rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition opacity-30 hover:opacity-100" title="管理パネル">
+    <i class="fa-solid fa-gear text-xs"></i>
+  </button>
+
+  <!-- ADMIN MANAGEMENT PANEL (Modal/Sidebar) -->
+  <div id="adminPanel" class="fixed top-4 left-4 z-50 w-96 max-h-[90vh] bg-slate-950/95 border-2 border-lolGold rounded-xl p-4 shadow-2xl overflow-y-auto custom-scroll hidden backdrop-blur-lg">
+    <div class="flex justify-between items-center border-b border-slate-800 pb-2 mb-3">
+      <h3 class="font-orbitron font-bold text-lolGold text-base flex items-center gap-2">
+        <i class="fa-solid fa-pen-to-square"></i> 大会・ドラフト設定
+      </h3>
+      <button onclick="toggleAdminPanel()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="space-y-4 text-xs">
+      <!-- Sync Status Indicator & Broadcast Link -->
+      <div class="bg-slate-900 p-3 rounded border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400 font-bold">リアルタイム同期状態:</span>
+          <span id="syncStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+            <i class="fa-solid fa-bolt"></i> 即時同期接続中
+          </span>
+        </div>
+        <div class="pt-1 flex gap-2">
+          <button onclick="openBroadcastOverlayWindow()" class="w-full bg-slate-800 hover:bg-slate-700 text-lolGold border border-lolGold/40 py-1 px-2 rounded font-bold text-[11px] flex items-center justify-center gap-1.5 transition">
+            <i class="fa-solid fa-up-right-from-square"></i> OBS用オーバーレイを別タブで開く
+          </button>
+        </div>
+      </div>
+
+      <!-- GOOGLE SPREADSHEET INTEGRATION -->
+      <div class="bg-emerald-950/40 p-3 rounded border border-emerald-700/60">
+        <span class="font-bold text-emerald-400 block mb-1">
+          <i class="fa-solid fa-file-csv"></i> Googleスプレッドシート連携
+        </span>
+        <p class="text-[10px] text-slate-400 mb-2">公開（リンクを知っている全員）されたスプレッドシートからチーム名・選手名を取得します</p>
+        <div class="space-y-2">
+          <div>
+            <label class="text-slate-400 block mb-0.5">スプレッドシートID または URL</label>
+            <input type="text" id="inputSheetId" placeholder="スプレッドシートURLまたはID" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white font-mono text-[11px]">
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-0.5">シート名（省略時は1枚目）</label>
+            <input type="text" id="inputSheetName" placeholder="例: Sheet1 または チーム一覧" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white text-[11px]">
+          </div>
+          <button onclick="fetchSpreadsheetData()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded transition flex items-center justify-center gap-1">
+            <i class="fa-solid fa-cloud-arrow-down"></i> スプレッドシートから取得・反映
+          </button>
+        </div>
+      </div>
+
+      <!-- Sync Settings -->
+      <div class="bg-slate-900 p-3 rounded border border-slate-800">
+        <span class="font-bold text-lolGold block mb-1">ネットワーク同期ルーム ID</span>
+        <p class="text-[10px] text-slate-400 mb-2">PC間・別ネットワークで同期する場合、同一のIDを入力してください</p>
+        <div>
+          <input type="text" id="inputSyncTopic" value="lol_draft_sync_room_2026" oninput="changeSyncTopic()" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white font-mono">
+        </div>
+      </div>
+
+      <!-- RED TEAM -->
+      <div class="bg-rose-950/30 p-3 rounded border border-rose-900/60">
+        <span class="font-bold text-rose-400 block mb-2">RED SIDE チーム設定 (左)</span>
+        <div class="space-y-2">
+          <div>
+            <label class="text-slate-400 block mb-1">チーム名</label>
+            <input type="text" id="inputRedTeam" value="CC CORE" oninput="updateStateFromInputs()" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white font-bold">
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">コーチ名</label>
+            <input type="text" id="inputRedCoach" value="COACH: CEROS" oninput="updateStateFromInputs()" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white">
+          </div>
+        </div>
+      </div>
+
+      <!-- BLUE TEAM -->
+      <div class="bg-teal-950/30 p-3 rounded border border-teal-900/60">
+        <span class="font-bold text-teal-400 block mb-2">BLUE SIDE チーム設定 (右)</span>
+        <div class="space-y-2">
+          <div>
+            <label class="text-slate-400 block mb-1">チーム名</label>
+            <input type="text" id="inputBlueTeam" value="IT CORE" oninput="updateStateFromInputs()" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white font-bold">
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">コーチ名</label>
+            <input type="text" id="inputBlueCoach" value="COACH: EUGEO" oninput="updateStateFromInputs()" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white">
+          </div>
+        </div>
+      </div>
+
+      <!-- PLAYER & PICKS (SELECT SYSTEM) -->
+      <div class="bg-slate-900 p-3 rounded border border-slate-800">
+        <span class="font-bold text-lolGold block mb-1">メインピック 選択 (5 vs 5)</span>
+        <p class="text-[10px] text-slate-400 mb-2">※ チャンピオンを一覧から選択してください</p>
+        
+        <div id="playerInputsContainer" class="space-y-2">
+          <!-- Dynamic Select Boxes Generated Here -->
+        </div>
+      </div>
+
+      <!-- FEARLESS DRAFT MULTI-SELECT -->
+      <div class="bg-slate-900 p-3 rounded border border-slate-800">
+        <span class="font-bold text-lolGold block mb-1">フィアレスドラフト 複数選択</span>
+        <p class="text-[10px] text-slate-400 mb-2">※ 選択したチャンピオン（複数可）がフィアレス枠に並びます</p>
+        
+        <div class="space-y-3">
+          <div>
+            <label class="text-rose-400 font-bold block mb-1">RED SIDE FEARLESS 選択</label>
+            <div id="redFearlessSelectContainer" class="max-h-36 overflow-y-auto custom-scroll bg-slate-950 border border-slate-800 rounded p-2 grid grid-cols-2 gap-1 text-[11px]">
+              <!-- Generated via JS -->
+            </div>
+          </div>
+          <div>
+            <label class="text-teal-400 font-bold block mb-1">BLUE SIDE FEARLESS 選択</label>
+            <div id="blueFearlessSelectContainer" class="max-h-36 overflow-y-auto custom-scroll bg-slate-950 border border-slate-800 rounded p-2 grid grid-cols-2 gap-1 text-[11px]">
+              <!-- Generated via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BANS SELECT SYSTEM -->
+      <div class="bg-slate-900 p-3 rounded border border-slate-800">
+        <span class="font-bold text-lolGold block mb-1">BAN PHASE 選択 (5 vs 5)</span>
+        <p class="text-[10px] text-slate-400 mb-2">※ BANするチャンピオンを選択してください</p>
+        
+        <div class="space-y-3">
+          <div>
+            <span class="text-rose-400 font-bold block mb-1">RED BANS (Phase 1: 3, Phase 2: 2)</span>
+            <div id="redBansSelectContainer" class="grid grid-cols-5 gap-1">
+              <!-- Generated via JS -->
+            </div>
+          </div>
+          <div>
+            <span class="text-teal-400 font-bold block mb-1">BLUE BANS (Phase 1: 3, Phase 2: 2)</span>
+            <div id="blueBansSelectContainer" class="grid grid-cols-5 gap-1">
+              <!-- Generated via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-2 flex justify-end">
+        <button onclick="toggleAdminPanel()" class="w-full bg-lolGold hover:bg-yellow-600 text-black font-extrabold py-2 rounded font-orbitron">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MAIN 16:9 BROADCAST OVERLAY CANVAS (1920 x 1080) -->
+  <div class="scaling-wrapper">
+    <div id="broadcastCanvas" class="broadcast-screen">
+      <div class="scanlines absolute inset-0 z-10"></div>
+
+      <!-- 1. TOP HEADER SECTION -->
+      <div class="absolute top-0 left-0 w-full h-[110px] bg-slate-950/90 border-b-2 border-slate-800/80 z-20 flex justify-between items-center px-10">
+        
+        <!-- RED SIDE HEADER (LEFT) -->
+        <div class="flex items-center space-x-4 w-[600px]">
+          <div class="w-14 h-14 rounded-lg bg-rose-950/80 border-2 border-rose-500 flex items-center justify-center font-orbitron font-black text-rose-500 text-2xl shadow-lg shadow-rose-900/40 shrink-0" id="displayRedLogo">
+            CC
+          </div>
+          <div class="truncate">
+            <h1 class="font-orbitron font-black text-3xl md:text-4xl text-rose-500 tracking-wider truncate uppercase drop-shadow-[0_0_10px_rgba(232,64,87,0.6)]" id="displayRedTeam">
+              CC CORE
+            </h1>
+            <p class="text-xs text-rose-300/80 font-bold tracking-widest uppercase" id="displayRedCoach">
+              COACH: CEROS
+            </p>
+          </div>
+        </div>
+
+        <!-- BLUE SIDE HEADER (RIGHT) -->
+        <div class="flex items-center space-x-4 space-x-reverse w-[600px] justify-start flex-row-reverse text-right">
+          <div class="w-14 h-14 rounded-lg bg-teal-950/80 border-2 border-teal-400 flex items-center justify-center font-orbitron font-black text-teal-400 text-2xl shadow-lg shadow-teal-900/40 shrink-0" id="displayBlueLogo">
+            IT
+          </div>
+          <div class="truncate">
+            <h1 class="font-orbitron font-black text-3xl md:text-4xl text-teal-400 tracking-wider truncate uppercase drop-shadow-[0_0_10px_rgba(10,200,185,0.6)]" id="displayBlueTeam">
+              IT CORE
+            </h1>
+            <p class="text-xs text-teal-300/80 font-bold tracking-widest uppercase" id="displayBlueCoach">
+              COACH: EUGEO
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- 2. MAIN BODY SECTION (Picks, Caster Area, Fearless Draft) -->
+      <div class="absolute top-[110px] left-0 w-full h-[810px] z-20 grid grid-cols-12 gap-0">
+        
+        <!-- RED SIDE 5 PICKS (VERTICAL LEFT) -->
+        <div class="col-span-3 h-full flex flex-col justify-between p-2 space-y-2">
+          <div id="redPicksContainer" class="h-full flex flex-col justify-between space-y-2">
+            <!-- Dynamic Picks Rendered Here -->
+          </div>
+        </div>
+
+        <!-- CENTER AREA: LIVE CASTER & FEARLESS DRAFT -->
+        <div class="col-span-6 h-full flex flex-col justify-between p-3 relative">
+          
+          <!-- WEBCAM / CASTER TRANSPARENT WINDOW -->
+          <div class="w-full h-[590px] border-2 border-slate-800/80 rounded-xl bg-slate-950/30 flex items-center justify-center relative overflow-hidden group">
+            <div class="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-lolGold"></div>
+            <div class="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-lolGold"></div>
+            <div class="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-lolGold"></div>
+            <div class="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-lolGold"></div>
+
+            <div class="text-center text-slate-500/80 pointer-events-none">
+              <i class="fa-solid fa-headset text-5xl mb-2 text-lolGold/40"></i>
+              <p class="font-orbitron font-bold tracking-widest text-sm text-slate-400">LIVE CASTER / STREAM FEED AREA</p>
+              <p class="text-xs text-slate-600 mt-1">実況解説・配信用キャスターカメラ枠（透明/背景透過）</p>
+            </div>
+          </div>
+
+          <!-- FEARLESS DRAFT SECTION & CENTER LOGO -->
+          <div class="w-full h-[180px] bg-slate-950/80 rounded-xl border border-slate-800/80 p-3 flex items-end justify-between backdrop-blur-md relative overflow-visible">
+            
+            <!-- RED TEAM FEARLESS (LEFT) -->
+            <div class="w-[50%] flex flex-col justify-end border-r border-slate-800/80 pr-3 h-full relative overflow-visible">
+              <span class="text-[11px] font-orbitron font-extrabold text-rose-500 tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
+                <span class="w-2 h-2 rounded-full bg-rose-500"></span> FEARLESS DRAFT
+              </span>
+              <!-- Stack items bottom-to-top in a 5-column grid without scrolling -->
+              <div id="redFearlessContainer" class="grid grid-cols-5 gap-1.5 p-0.5 justify-items-start items-end">
+                <!-- 5 Champion Icons per row, stacked upward -->
+              </div>
+            </div>
+
+            <!-- BLUE TEAM FEARLESS (RIGHT) -->
+            <div class="w-[50%] flex flex-col justify-end border-l border-slate-800/80 pl-3 items-end text-right h-full relative overflow-visible">
+              <span class="text-[11px] font-orbitron font-extrabold text-teal-400 tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
+                FEARLESS DRAFT <span class="w-2 h-2 rounded-full bg-teal-400"></span>
+              </span>
+              <!-- Stack items bottom-to-top in a 5-column grid without scrolling -->
+              <div id="blueFearlessContainer" class="grid grid-cols-5 gap-1.5 p-0.5 justify-items-end items-end">
+                <!-- 5 Champion Icons per row, stacked upward -->
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- BLUE SIDE 5 PICKS (VERTICAL RIGHT) -->
+        <div class="col-span-3 h-full flex flex-col justify-between p-2 space-y-2">
+          <div id="bluePicksContainer" class="h-full flex flex-col justify-between space-y-2">
+            <!-- Dynamic Picks Rendered Here -->
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- 3. BAN PHASE SECTION (BOTTOM) -->
+      <div class="absolute bottom-0 left-0 w-full h-[160px] bg-slate-950/95 border-t border-slate-800/80 z-20 flex justify-between items-center px-8 py-2">
+        
+        <!-- RED BANS (Phase 1 [3] + Phase 2 [2]) -->
+        <div class="flex items-center space-x-4">
+          <div class="flex flex-col">
+            <span class="font-orbitron text-xs font-black text-rose-500 tracking-wider">BAN PHASE 1</span>
+            <span class="text-[10px] text-slate-500">FIRST 3 BANS</span>
+          </div>
+          <div class="flex space-x-2" id="redBansPhase1">
+            <!-- 3 Cards -->
+          </div>
+
+          <div class="w-px h-12 bg-slate-800 mx-2"></div>
+
+          <div class="flex flex-col">
+            <span class="font-orbitron text-xs font-black text-rose-400/80 tracking-wider">BAN PHASE 2</span>
+            <span class="text-[10px] text-slate-500">SECOND 2 BANS</span>
+          </div>
+          <div class="flex space-x-2" id="redBansPhase2">
+            <!-- 2 Cards -->
+          </div>
+        </div>
+
+        <!-- CENTER ICON SYMBOL -->
+        <div class="flex flex-col items-center justify-center">
+          <div class="w-12 h-12 rounded-full border border-lolGold/40 bg-slate-900 flex items-center justify-center shadow-lg">
+            <i class="fa-solid fa-shield-halved text-lolGold text-lg"></i>
+          </div>
+        </div>
+
+        <!-- BLUE BANS (Phase 2 [2] + Phase 1 [3]) -->
+        <div class="flex items-center space-x-4 space-x-reverse flex-row-reverse text-right">
+          <div class="flex flex-col">
+            <span class="font-orbitron text-xs font-black text-teal-400 tracking-wider">BAN PHASE 1</span>
+            <span class="text-[10px] text-slate-500">FIRST 3 BANS</span>
+          </div>
+          <div class="flex space-x-2" id="blueBansPhase1">
+            <!-- 3 Cards -->
+          </div>
+
+          <div class="w-px h-12 bg-slate-800 mx-2"></div>
+
+          <div class="flex flex-col">
+            <span class="font-orbitron text-xs font-black text-teal-300/80 tracking-wider">BAN PHASE 2</span>
+            <span class="text-[10px] text-slate-500">SECOND 2 BANS</span>
+          </div>
+          <div class="flex space-x-2" id="blueBansPhase2">
+            <!-- 2 Cards -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- JAVASCRIPT APPLICATION LOGIC -->
+  <script>
+    const DDRAGON_VER = '14.10.1';
+    const DEFAULT_SYNC_TOPIC = 'lol_draft_sync_room_2026';
+    const CLIENT_ID = Math.random().toString(36).substring(2, 9); // 自クライアント判定用ID
+    let currentSyncTopic = DEFAULT_SYNC_TOPIC;
+    let syncBroadcastChannel = null;
+    let sseEventSource = null;
+    let lastBroadcastTime = 0;
+
+    // Champion Master List with Japanese Names for Display
+    const CHAMPION_MAP = [
+      { id: "Aatrox", name: "エイトロックス" },
+      { id: "Ahri", name: "アーリ" },
+      { id: "Akali", name: "アカリ" },
+      { id: "Akshan", name: "アクシャン" },
+      { id: "Alistar", name: "アリスター" },
+      { id: "Ambessa", name: "アンベッサ" },
+      { id: "Amumu", name: "アムム" },
+      { id: "Anivia", name: "アニビア" },
+      { id: "Annie", name: "アニー" },
+      { id: "Aphelios", name: "アフェリオス" },
+      { id: "Ashe", name: "アッシュ" },
+      { id: "Aurora", name: "オーロラ" },
+      { id: "AurelionSol", name: "オレリオン・ソル" },
+      { id: "Azir", name: "アジール" },
+      { id: "Bard", name: "バード" },
+      { id: "Belveth", name: "ベル＝ヴェス" },
+      { id: "Blitzcrank", name: "ブリッツクランク" },
+      { id: "Brand", name: "ブランド" },
+      { id: "Braum", name: "ブラウム" },
+      { id: "Briar", name: "ブライアー" },
+      { id: "Caitlyn", name: "ケイトリン" },
+      { id: "Camille", name: "カミール" },
+      { id: "Cassiopeia", name: "カシオペア" },
+      { id: "Chogath", name: "チョ＝ガス" },
+      { id: "Corki", name: "コーキ" },
+      { id: "Darius", name: "ダリウス" },
+      { id: "Diana", name: "ダイアナ" },
+      { id: "Draven", name: "ドレイヴン" },
+      { id: "DrMundo", name: "ドクター・ムンド" },
+      { id: "Ekko", name: "エコー" },
+      { id: "Elise", name: "エリス" },
+      { id: "Evelynn", name: "イブリン" },
+      { id: "Ezreal", name: "エズリアル" },
+      { id: "Fiddlesticks", name: "フィドルスティックス" },
+      { id: "Fiora", name: "フィオラ" },
+      { id: "Fizz", name: "フィズ" },
+      { id: "Galio", name: "ガリオ" },
+      { id: "Gangplank", name: "ガングプランク" },
+      { id: "Garen", name: "ガレン" },
+      { id: "Gnar", name: "ナー" },
+      { id: "Gragas", name: "グラガス" },
+      { id: "Graves", name: "グレイブス" },
+      { id: "Gwen", name: "グウェン" },
+      { id: "Hecarim", name: "ヘカリム" },
+      { id: "Heimerdinger", name: "ハイマーディンガー" },
+      { id: "Hwei", name: "フェイ" },
+      { id: "Illaoi", name: "イラオイ" },
+      { id: "Irelia", name: "イレリア" },
+      { id: "Ivern", name: "アイバーン" },
+      { id: "Janna", name: "ジャンナ" },
+      { id: "JarvanIV", name: "ジャーヴァンIV" },
+      { id: "Jax", name: "ジャックス" },
+      { id: "Jayce", name: "ジェイス" },
+      { id: "Jhin", name: "ジン" },
+      { id: "Jinx", name: "ジンクス" },
+      { id: "Kaisa", name: "カイ＝サ" },
+      { id: "Kalista", name: "カリスタ" },
+      { id: "Karma", name: "カルマ" },
+      { id: "Karthus", name: "カーサス" },
+      { id: "Kassadin", name: "カサディン" },
+      { id: "Katarina", name: "カタリナ" },
+      { id: "Kayle", name: "ケイル" },
+      { id: "Kayn", name: "ケイン" },
+      { id: "Kennen", name: "ケネン" },
+      { id: "KhaZix", name: "カ＝ジックス" },
+      { id: "Kindred", name: "キンドレッド" },
+      { id: "Kled", name: "クレッド" },
+      { id: "KogMaw", name: "コグ＝マウ" },
+      { id: "KSante", name: "カサンテ" },
+      { id: "Leblanc", name: "ルブラン" },
+      { id: "LeeSin", name: "リー・シン" },
+      { id: "Leona", name: "レオナ" },
+      { id: "Lillia", name: "リリア" },
+      { id: "Lissandra", name: "リサンドラ" },
+      { id: "Lucian", name: "ルシアン" },
+      { id: "Lulu", name: "ルル" },
+      { id: "Lux", name: "ラックス" },
+      { id: "Malphite", name: "マルファイト" },
+      { id: "Malzahar", name: "マルザハール" },
+      { id: "Maokai", name: "マオカイ" },
+      { id: "MasterYi", name: "マスター・イー" },
+      { id: "Mel", name: "メル" },
+      { id: "Milio", name: "ミリオ" },
+      { id: "MissFortune", name: "ミス・フォーチュン" },
+      { id: "Wukong", name: "ウーコン" },
+      { id: "Mordekaiser", name: "モルデカイザー" },
+      { id: "Morgana", name: "モルガナ" },
+      { id: "Naafiri", name: "ナフィーリ" },
+      { id: "Nami", name: "ナミ" },
+      { id: "Nasus", name: "ナスス" },
+      { id: "Nautilus", name: "ノーチラス" },
+      { id: "Neeko", name: "ニーコ" },
+      { id: "Nidalee", name: "ニダリー" },
+      { id: "Nilah", name: "ニーラ" },
+      { id: "Nocturne", name: "ノクターン" },
+      { id: "Nunu", name: "ヌヌ＆ウィルンプ" },
+      { id: "Olaf", name: "オラフ" },
+      { id: "Orianna", name: "オリアナ" },
+      { id: "Ornn", name: "オーン" },
+      { id: "Pantheon", name: "パンテオン" },
+      { id: "Poppy", name: "ポッピー" },
+      { id: "Pyke", name: "パイク" },
+      { id: "Qiyana", name: "キヤナ" },
+      { id: "Quinn", name: "クイン" },
+      { id: "Rakan", name: "ラカン" },
+      { id: "Rammus", name: "ラムス" },
+      { id: "RekSai", name: "レク＝サイ" },
+      { id: "Rell", name: "レル" },
+      { id: "Renata", name: "レナータ・グラスク" },
+      { id: "Renekton", name: "レネクトン" },
+      { id: "Rengar", name: "レンガー" },
+      { id: "Riven", name: "リヴェン" },
+      { id: "Rumble", name: "ランブル" },
+      { id: "Ryze", name: "ライズ" },
+      { id: "Samira", name: "サミラ" },
+      { id: "Sejuani", name: "セジュアニ" },
+      { id: "Senna", name: "セナ" },
+      { id: "Seraphine", name: "セラフィーン" },
+      { id: "Sett", name: "セット" },
+      { id: "Shaco", name: "シャコ" },
+      { id: "Shen", name: "シェン" },
+      { id: "Shyvana", name: "シヴァーナ" },
+      { id: "Singed", name: "シンジド" },
+      { id: "Sion", name: "サイオン" },
+      { id: "Sivir", name: "シヴィア" },
+      { id: "Skarner", name: "スカーナー" },
+      { id: "Smolder", name: "スモルダー" },
+      { id: "Sona", name: "ソナ" },
+      { id: "Soraka", name: "ソラカ" },
+      { id: "Swain", name: "スウェイン" },
+      { id: "Sylas", name: "サイラス" },
+      { id: "Syndra", name: "シンドラ" },
+      { id: "TahmKench", name: "タム・ケンチ" },
+      { id: "Taliyah", name: "タリヤ" },
+      { id: "Talon", name: "タロン" },
+      { id: "Taric", name: "タリック" },
+      { id: "Teemo", name: "ティーモ" },
+      { id: "Thresh", name: "スレッシュ" },
+      { id: "Tristana", name: "トリスターナ" },
+      { id: "Trundle", name: "トランドル" },
+      { id: "Tryndamere", name: "トリンダメア" },
+      { id: "TwistedFate", name: "ツイステッド・フェイト" },
+      { id: "Twitch", name: "トゥイッチ" },
+      { id: "Udyr", name: "ウディアー" },
+      { id: "Urgot", name: "アーゴット" },
+      { id: "Varus", name: "ヴァルス" },
+      { id: "Vayne", name: "ヴェイン" },
+      { id: "Veigar", name: "ベイガー" },
+      { id: "Velkoz", name: "ヴェル＝コズ" },
+      { id: "Vex", name: "ヴェックス" },
+      { id: "Vi", name: "ヴァイ" },
+      { id: "Viego", name: "ヴィエゴ" },
+      { id: "Viktor", name: "ビクター" },
+      { id: "Vladimir", name: "ブラッドミア" },
+      { id: "Volibear", name: "ボリベア" },
+      { id: "Warwick", name: "ワーウィック" },
+      { id: "Xayah", name: "ザヤ" },
+      { id: "Xerath", name: "ゼラス" },
+      { id: "XinZhao", name: "シン・ジャオ" },
+      { id: "Yasuo", name: "ヤスオ" },
+      { id: "Yone", name: "ヨネ" },
+      { id: "Yorick", name: "ヨリック" },
+      { id: "Locke", name: "ロック" },
+      { id: "Yunara", name: "ユナラ" },
+      { id: "Yuumi", name: "ユーミ" },
+      { id: "Zaahen", name: "ザーヘン" },
+      { id: "Zac", name: "ザック" },
+      { id: "Zed", name: "ゼド" },
+      { id: "Zeri", name: "ゼリ" },
+      { id: "Ziggs", name: "ジグス" },
+      { id: "Zilean", name: "ジリアン" },
+      { id: "Zoe", name: "ゾーイ" },
+      { id: "Zyra", name: "ザイラ" }
+    ].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+    // Application State Matching Reference Image
+    let appState = {
+      gameCode: "D6-G2",
+      patch: "PATCH 26.22",
+      timer: 24,
+
+      redTeam: {
+        name: "CC CORE",
+        coach: "COACH: CEROS",
+        picks: [
+          { player: "YUKIO", champ: "Olaf", active: false },
+          { player: "k4sen", champ: "Lillia", active: false },
+          { player: "Kuzuha", champ: "Morgana", active: false },
+          { player: "Tatsumaki Chise", champ: "Janna", active: false },
+          { player: "Konkun Aria", champ: "Lulu", active: true }
+        ],
+        fearless: ["Renekton", "JarvanIV", "Syndra", "Lucian"],
+        bans: ["Caitlyn", "Maokai", "KSante", "Jayce", "Rumble"]
+      },
+
+      blueTeam: {
+        name: "IT CORE",
+        coach: "COACH: EUGEO",
+        picks: [
+          { player: "mitani1", champ: "Ryze", active: false },
+          { player: "Alpha Azur", champ: "Diana", active: false },
+          { player: "Takaya Special", champ: "Zed", active: false },
+          { player: "Gonkane", champ: "Ashe", active: false },
+          { player: "RegleshLionheart", champ: "Seraphine", active: false }
+        ],
+        fearless: ["Aatrox", "LeeSin", "Orianna", "Varus"],
+        bans: ["Briar", "Galio", "Yone", "Sejuani", "Azir"]
+      }
+    };
+
+    // Helper functions for UI
+    function toggleAdminPanel() {
+      const panel = document.getElementById('adminPanel');
+      if (panel) panel.classList.toggle('hidden');
+    }
+
+    function openBroadcastOverlayWindow() {
+      window.open(window.location.href, '_blank');
+    }
+
+    function changeSyncTopic() {
+      const input = document.getElementById('inputSyncTopic');
+      if (input && input.value.trim() !== '') {
+        currentSyncTopic = input.value.trim();
+        setupNtfySSE(currentSyncTopic);
+      }
+    }
+
+    // Standardize Champion Name to DDragon Image Key
+    function formatChampName(name) {
+      if (!name) return "";
+      let clean = name.trim();
+      const lower = clean.toLowerCase();
+      
+      if (lower === 'khazix' || lower === "kha'zix" || lower === 'khazix') return 'Khazix';
+      if (lower === 'zaahen' || lower === 'zahen' || lower === 'ザーヘン') return 'Zaahen';
+      if (lower === 'locke' || lower === 'yole' || lower === 'ロック') return 'Locke';
+      if (lower === 'yunara' || lower === 'ユナラ') return 'Yunara';
+      if (lower === 'mel' || lower === 'メル') return 'Mel';
+      if (lower === 'aurora' || lower === 'オーロラ') return 'Aurora';
+      if (lower === 'ksante' || lower === "k'sante") return 'KSante';
+      if (lower === 'wukong' || lower === 'monkeyking') return 'MonkeyKing';
+      if (lower === 'drmundo' || lower === 'dr.mundo') return 'DrMundo';
+      if (lower === 'jarvaniv' || lower === 'jarvan iv') return 'JarvanIV';
+      if (lower === 'renataglasc' || lower === 'renata') return 'Renata';
+      if (lower === 'belveth' || lower === "bel'veth") return 'Belveth';
+      if (lower === 'velkoz' || lower === "vel'koz") return 'Velkoz';
+      if (lower === 'kogmaw' || lower === "kog'maw") return 'KogMaw';
+      if (lower === 'reksai' || lower === "rek'sai") return 'RekSai';
+      if (lower === 'chogath' || lower === "cho'gath") return 'Chogath';
+
+      const matched = CHAMPION_MAP.find(c => c.name === clean || c.id.toLowerCase() === lower);
+      if (matched) return matched.id;
+
+      return clean.replace(/[^a-zA-Z0-9]/g, '');
+    }
+
+    function getChampSplashUrl(champName) {
+      const key = formatChampName(champName);
+      if (!key) return "https://placehold.co/1280x720/0f172a/334155?text=No+Champion";
+      return `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${key}_0.jpg`;
+    }
+
+    function getChampIconUrl(champName) {
+      const key = formatChampName(champName);
+      if (!key) return "https://placehold.co/120x120/0f172a/334155?text=NONE";
+      return `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VER}/img/champion/${key}.png`;
+    }
+
+    // Generate Select Options with Japanese Katakana Display
+    function buildChampOptionsHtml(selectedChamp) {
+      let options = `<option value="">(未選択)</option>`;
+      CHAMPION_MAP.forEach(champ => {
+        const isSelected = (champ.id.toLowerCase() === (selectedChamp || '').toLowerCase()) ? 'selected' : '';
+        options += `<option value="${champ.id}" ${isSelected}>${champ.name}</option>`;
+      });
+      return options;
+    }
+
+    // Render Admin Panel Control Selects
+    function renderAdminSelectInputs() {
+      // 1. Player Picks Inputs
+      const playerContainer = document.getElementById('playerInputsContainer');
+      if (playerContainer) {
+        let html = '';
+        for (let i = 0; i < 5; i++) {
+          const redP = appState.redTeam.picks[i] || { player: `Player ${i+1}`, champ: '' };
+          const blueP = appState.blueTeam.picks[i] || { player: `Player ${i+1}`, champ: '' };
+          
+          html += `
+            <div class="bg-slate-950 p-2 rounded border border-slate-800 space-y-1">
+              <div class="flex justify-between items-center text-[11px]">
+                <span class="font-bold text-slate-400">P${i+1} 枠設定</span>
+              </div>
+
+              <!-- RED Player Pick -->
+              <div class="grid grid-cols-2 gap-1 items-center">
+                <input type="text" id="inputRedPlayer_${i}" value="${redP.player}" oninput="updateStateFromInputs()" placeholder="RED プレイヤー名" class="bg-slate-900 border border-rose-950 p-1 rounded text-rose-300 font-bold text-[11px]">
+                <select id="selectRedChamp_${i}" onchange="updateStateFromInputs()" class="bg-slate-900 border border-rose-950 p-1 rounded text-white text-[11px]">
+                  ${buildChampOptionsHtml(redP.champ)}
+                </select>
+              </div>
+
+              <!-- BLUE Player Pick -->
+              <div class="grid grid-cols-2 gap-1 items-center">
+                <input type="text" id="inputBluePlayer_${i}" value="${blueP.player}" oninput="updateStateFromInputs()" placeholder="BLUE プレイヤー名" class="bg-slate-900 border border-teal-950 p-1 rounded text-teal-300 font-bold text-[11px]">
+                <select id="selectBlueChamp_${i}" onchange="updateStateFromInputs()" class="bg-slate-900 border border-teal-950 p-1 rounded text-white text-[11px]">
+                  ${buildChampOptionsHtml(blueP.champ)}
+                </select>
+              </div>
+            </div>
+          `;
+        }
+        playerContainer.innerHTML = html;
+      }
+
+      // 2. Fearless Checkbox Lists
+      renderFearlessCheckboxes('red', appState.redTeam.fearless);
+      renderFearlessCheckboxes('blue', appState.blueTeam.fearless);
+
+      // 3. Bans Select Boxes
+      renderBansSelects();
+    }
+
+    function renderFearlessCheckboxes(side, selectedArr) {
+      const container = document.getElementById(`${side}FearlessSelectContainer`);
+      if (!container) return;
+      
+      const set = new Set((selectedArr || []).map(s => s.toLowerCase()));
+      let html = '';
+      CHAMPION_MAP.forEach(champ => {
+        const checked = set.has(champ.id.toLowerCase()) ? 'checked' : '';
+        html += `
+          <label class="flex items-center space-x-1 hover:bg-slate-900 p-0.5 rounded cursor-pointer truncate">
+            <input type="checkbox" value="${champ.id}" onchange="updateStateFromInputs()" class="fearless-checkbox-${side} rounded bg-slate-900 border-slate-700 text-lolGold" ${checked}>
+            <span class="truncate">${champ.name}</span>
+          </label>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function renderBansSelects() {
+      const redCon = document.getElementById('redBansSelectContainer');
+      const blueCon = document.getElementById('blueBansSelectContainer');
+
+      if (redCon) {
+        let html = '';
+        for (let i = 0; i < 5; i++) {
+          const champ = appState.redTeam.bans[i] || '';
+          html += `
+            <select id="selectRedBan_${i}" onchange="updateStateFromInputs()" class="bg-slate-950 border border-rose-900/60 p-1 rounded text-white text-[10px] w-full truncate">
+              ${buildChampOptionsHtml(champ)}
+            </select>
+          `;
+        }
+        redCon.innerHTML = html;
+      }
+
+      if (blueCon) {
+        let html = '';
+        for (let i = 0; i < 5; i++) {
+          const champ = appState.blueTeam.bans[i] || '';
+          html += `
+            <select id="selectBlueBan_${i}" onchange="updateStateFromInputs()" class="bg-slate-950 border border-teal-900/60 p-1 rounded text-white text-[10px] w-full truncate">
+              ${buildChampOptionsHtml(champ)}
+            </select>
+          `;
+        }
+        blueCon.innerHTML = html;
+      }
+    }
+
+    function updateStateFromInputs() {
+      const redTeamName = document.getElementById('inputRedTeam')?.value || "CC CORE";
+      const redCoachName = document.getElementById('inputRedCoach')?.value || "COACH: CEROS";
+      const blueTeamName = document.getElementById('inputBlueTeam')?.value || "IT CORE";
+      const blueCoachName = document.getElementById('inputBlueCoach')?.value || "COACH: EUGEO";
+
+      appState.redTeam.name = redTeamName;
+      appState.redTeam.coach = redCoachName;
+      appState.blueTeam.name = blueTeamName;
+      appState.blueTeam.coach = blueCoachName;
+
+      // Read Picks
+      for (let i = 0; i < 5; i++) {
+        const rPlayer = document.getElementById(`inputRedPlayer_${i}`)?.value || `Player ${i+1}`;
+        const rChamp = document.getElementById(`selectRedChamp_${i}`)?.value || '';
+        const bPlayer = document.getElementById(`inputBluePlayer_${i}`)?.value || `Player ${i+1}`;
+        const bChamp = document.getElementById(`selectBlueChamp_${i}`)?.value || '';
+
+        appState.redTeam.picks[i].player = rPlayer;
+        appState.redTeam.picks[i].champ = rChamp;
+        appState.blueTeam.picks[i].player = bPlayer;
+        appState.blueTeam.picks[i].champ = bChamp;
+      }
+
+      // Read Fearless
+      const redFearless = [];
+      document.querySelectorAll('.fearless-checkbox-red:checked').forEach(cb => redFearless.push(cb.value));
+      appState.redTeam.fearless = redFearless;
+
+      const blueFearless = [];
+      document.querySelectorAll('.fearless-checkbox-blue:checked').forEach(cb => blueFearless.push(cb.value));
+      appState.blueTeam.fearless = blueFearless;
+
+      // Read Bans
+      for (let i = 0; i < 5; i++) {
+        appState.redTeam.bans[i] = document.getElementById(`selectRedBan_${i}`)?.value || '';
+        appState.blueTeam.bans[i] = document.getElementById(`selectBlueBan_${i}`)?.value || '';
+      }
+
+      renderApp();
+      broadcastState(appState);
+    }
+
+    function updateAdminInputsFromState() {
+      if (document.getElementById('inputRedTeam')) document.getElementById('inputRedTeam').value = appState.redTeam.name;
+      if (document.getElementById('inputRedCoach')) document.getElementById('inputRedCoach').value = appState.redTeam.coach;
+      if (document.getElementById('inputBlueTeam')) document.getElementById('inputBlueTeam').value = appState.blueTeam.name;
+      if (document.getElementById('inputBlueCoach')) document.getElementById('inputBlueCoach').value = appState.blueTeam.coach;
+
+      renderAdminSelectInputs();
+    }
+
+    // Google Spreadsheet Integration
+    async function fetchSpreadsheetData() {
+      const urlOrId = document.getElementById('inputSheetId')?.value.trim();
+      const sheetName = document.getElementById('inputSheetName')?.value.trim();
+
+      if (!urlOrId) {
+        alert('スプレッドシートのURLまたはIDを入力してください。');
+        return;
+      }
+
+      let sheetId = urlOrId;
+      const match = urlOrId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (match && match[1]) {
+        sheetId = match[1];
+      }
+
+      let gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json`;
+      if (sheetName) {
+        gvizUrl += `&sheet=${encodeURIComponent(sheetName)}`;
+      }
+
+      try {
+        const response = await fetch(gvizUrl);
+        const text = await response.text();
+        const jsonText = text.substring(47, text.length - 2);
+        const data = JSON.parse(jsonText);
+
+        const rows = data.table.rows;
+        if (!rows || rows.length === 0) {
+          alert('スプレッドシートにデータが見つかりませんでした。');
+          return;
+        }
+
+        const getVal = (r, c) => rows[r] && rows[r].c && rows[r].c[c] ? (rows[r].c[c].v || '') : '';
+
+        if (rows.length >= 1) {
+          appState.redTeam.name = getVal(0, 0) || appState.redTeam.name;
+          appState.redTeam.coach = getVal(0, 1) || appState.redTeam.coach;
+          for (let i = 0; i < 5; i++) {
+            appState.redTeam.picks[i].player = getVal(0, 2 + i) || appState.redTeam.picks[i].player;
+          }
+        }
+
+        if (rows.length >= 2) {
+          appState.blueTeam.name = getVal(1, 0) || appState.blueTeam.name;
+          appState.blueTeam.coach = getVal(1, 1) || appState.blueTeam.coach;
+          for (let i = 0; i < 5; i++) {
+            appState.blueTeam.picks[i].player = getVal(1, 2 + i) || appState.blueTeam.picks[i].player;
+          }
+        }
+
+        updateAdminInputsFromState();
+        renderApp();
+        broadcastState(appState);
+        alert('スプレッドシートからデータを正常に読み込み・反映しました！');
+      } catch (err) {
+        console.error('Spreadsheet fetch error:', err);
+        alert('スプレッドシートの読み込みに失敗しました。共有設定が「リンクを知っている全員が閲覧可能」になっているか確認してください。');
+      }
+    }
+
+    // Main UI Render Method
+    function renderApp() {
+      ensureValidState();
+
+      // Top Header
+      document.getElementById('displayRedTeam').textContent = appState.redTeam.name;
+      document.getElementById('displayRedCoach').textContent = appState.redTeam.coach;
+      document.getElementById('displayRedLogo').textContent = (appState.redTeam.name || 'RED').substring(0, 2).toUpperCase();
+
+      document.getElementById('displayBlueTeam').textContent = appState.blueTeam.name;
+      document.getElementById('displayBlueCoach').textContent = appState.blueTeam.coach;
+      document.getElementById('displayBlueLogo').textContent = (appState.blueTeam.name || 'BLUE').substring(0, 2).toUpperCase();
+
+      // Render Vertical Champion Cards
+      renderPicks('red', appState.redTeam.picks);
+      renderPicks('blue', appState.blueTeam.picks);
+
+      // Render Fearless Icon Arrays
+      renderFearless('red', appState.redTeam.fearless);
+      renderFearless('blue', appState.blueTeam.fearless);
+
+      // Render Bans
+      renderBans('red', appState.redTeam.bans);
+      renderBans('blue', appState.blueTeam.bans);
+    }
+
+    function renderPicks(side, picks) {
+      const container = document.getElementById(`${side}PicksContainer`);
+      if (!container) return;
+
+      const isRed = (side === 'red');
+      let html = '';
+
+      picks.forEach((pick) => {
+        const splashUrl = getChampSplashUrl(pick.champ);
+        const champKey = formatChampName(pick.champ);
+        const displayChampName = champKey || '';
+        const activeClass = 'border border-slate-800/80';
+        const fallbackSrc = "https://placehold.co/1280x720/0f172a/334155?text=DRAFT";
+
+        if (isRed) {
+          html += `
+            <div class="relative w-full h-[148px] rounded-xl overflow-hidden bg-slate-950 ${activeClass} transition-all duration-300 group">
+              <img src="${splashUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 scale-105 group-hover:scale-110">
+              <div class="absolute inset-0 champ-overlay-red"></div>
+              
+              <div class="absolute inset-0 p-4 flex flex-col justify-between z-10">
+                <span class="font-orbitron font-extrabold text-2xl text-white tracking-wider drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] truncate">
+                  ${pick.player}
+                </span>
+                <span class="self-end font-orbitron font-black text-xs text-rose-300 tracking-widest uppercase bg-rose-950/70 px-2 py-0.5 rounded border border-rose-500/40">
+                  ${displayChampName}
+                </span>
+              </div>
+            </div>
+          `;
+        } else {
+          html += `
+            <div class="relative w-full h-[148px] rounded-xl overflow-hidden bg-slate-950 ${activeClass} transition-all duration-300 group">
+              <img src="${splashUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 scale-105 group-hover:scale-110">
+              <div class="absolute inset-0 champ-overlay-blue"></div>
+              
+              <div class="absolute inset-0 p-4 flex flex-col justify-between items-end z-10 text-right">
+                <span class="font-orbitron font-extrabold text-2xl text-white tracking-wider drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] truncate">
+                  ${pick.player}
+                </span>
+                <span class="self-start font-orbitron font-black text-xs text-teal-300 tracking-widest uppercase bg-teal-950/70 px-2 py-0.5 rounded border border-teal-400/40">
+                  ${displayChampName}
+                </span>
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      container.innerHTML = html;
+    }
+
+    function renderFearless(side, fearlessArr) {
+      const container = document.getElementById(`${side}FearlessContainer`);
+      if (!container) return;
+
+      const isRed = (side === 'red');
+      let html = '';
+
+      (fearlessArr || []).forEach(champ => {
+        if (!champ) return;
+        const iconUrl = getChampIconUrl(champ);
+        const borderColor = isRed ? 'border-rose-900/80' : 'border-teal-900/80';
+        const fallbackSrc = "https://placehold.co/120x120/0f172a/334155?text=FEARLESS";
+
+        html += `
+          <div class="w-7 h-7 rounded border ${borderColor} overflow-hidden bg-slate-900 shadow-md shrink-0">
+            <img src="${iconUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="w-full h-full object-cover" title="${champ}">
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function renderBans(side, bansArr) {
+      const p1Container = document.getElementById(`${side}BansPhase1`);
+      const p2Container = document.getElementById(`${side}BansPhase2`);
+
+      if (!p1Container || !p2Container) return;
+
+      const isRed = (side === 'red');
+      const borderColor = isRed ? 'border-rose-900/80' : 'border-teal-900/80';
+      const fallbackSrc = "https://placehold.co/120x120/0f172a/334155?text=BAN";
+
+      let p1Html = '';
+      for (let i = 0; i < 3; i++) {
+        const champ = bansArr[i];
+        if (champ) {
+          const iconUrl = getChampIconUrl(champ);
+          p1Html += `
+            <div class="w-10 h-10 rounded border ${borderColor} overflow-hidden bg-slate-900 ban-card shadow-md">
+              <img src="${iconUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="w-full h-full object-cover grayscale brightness-75">
+            </div>
+          `;
+        } else {
+          p1Html += `
+            <div class="w-10 h-10 rounded border border-slate-800 bg-slate-950 flex items-center justify-center text-slate-700 font-bold text-xs">
+              BAN
+            </div>
+          `;
+        }
+      }
+
+      let p2Html = '';
+      for (let i = 3; i < 5; i++) {
+        const champ = bansArr[i];
+        if (champ) {
+          const iconUrl = getChampIconUrl(champ);
+          p2Html += `
+            <div class="w-10 h-10 rounded border ${borderColor} overflow-hidden bg-slate-900 ban-card shadow-md">
+              <img src="${iconUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="w-full h-full object-cover grayscale brightness-75">
+            </div>
+          `;
+        } else {
+          p2Html += `
+            <div class="w-10 h-10 rounded border border-slate-800 bg-slate-950 flex items-center justify-center text-slate-700 font-bold text-xs">
+              BAN
+            </div>
+          `;
+        }
+      }
+
+      p1Container.innerHTML = p1Html;
+      p2Container.innerHTML = p2Html;
+    }
+
+    // --- ENHANCED REALTIME SYNC SYSTEM FOR DEPLOYED WEBSITES ---
+    function initSyncSystem() {
+      // 1. BroadcastChannel (同一ブラウザ・タスク・OBSブラウザソース間での超高速ローカル通信)
+      if ('BroadcastChannel' in window) {
+        try {
+          syncBroadcastChannel = new BroadcastChannel('lol_draft_broadcast_channel');
+          syncBroadcastChannel.onmessage = (event) => {
+            if (event.data && event.data.type === 'STATE_UPDATE' && event.data.clientId !== CLIENT_ID) {
+              applyRemoteState(event.data.state);
+            }
+          };
+        } catch(e) {
+          console.warn('BroadcastChannel error:', e);
+        }
+      }
+
+      // 2. Storage Event (タブ間・ウィンドウ間のミリ秒レスポンス同期)
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'lol_draft_state' && e.newValue) {
+          try {
+            const data = JSON.parse(e.newValue);
+            if (data && data.clientId !== CLIENT_ID && data.state) {
+              applyRemoteState(data.state);
+            }
+          } catch (err) {}
+        }
+      });
+
+      // 保存済みローカル状態の復元
+      const saved = localStorage.getItem('lol_draft_state');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const stateData = parsed.state || parsed;
+          if (stateData && stateData.redTeam && stateData.blueTeam) {
+            appState = stateData;
+          }
+        } catch (e) {}
+      }
+
+      // 3. ネットワーク間リアルタイム同期 (ntfy SSE Hub)
+      setupNtfySSE(currentSyncTopic);
+    }
+
+    function setupNtfySSE(topic) {
+      if (sseEventSource) {
+        sseEventSource.close();
+      }
+      try {
+        sseEventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
+        sseEventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data && data.message) {
+              const payload = JSON.parse(data.message);
+              if (payload.type === 'STATE_UPDATE' && payload.clientId !== CLIENT_ID) {
+                applyRemoteState(payload.state);
+              }
+            }
+          } catch (err) {}
+        };
+      } catch (e) {
+        console.warn('ntfy SSE connection failed:', e);
+      }
+    }
+
+    function broadcastState(state) {
+      const syncPayload = {
+        type: 'STATE_UPDATE',
+        clientId: CLIENT_ID,
+        timestamp: Date.now(),
+        state: state
+      };
+
+      // 1. localStorage 同期（同一PC内のOBS/ブラウザ間即時反映）
+      try {
+        localStorage.setItem('lol_draft_state', JSON.stringify(syncPayload));
+      } catch(e) {}
+
+      // 2. BroadcastChannel 同期
+      if (syncBroadcastChannel) {
+        try {
+          syncBroadcastChannel.postMessage(syncPayload);
+        } catch(e) {}
+      }
+
+      // 3. ntfy ネットワーク同期（レートリミット保護付き）
+      const now = Date.now();
+      if (now - lastBroadcastTime > 100) { // 100ms スロットリング
+        lastBroadcastTime = now;
+        fetch(`https://ntfy.sh/${currentSyncTopic}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(syncPayload)
+        }).catch(() => {});
+      }
+    }
+
+    function applyRemoteState(newState) {
+      if (!newState || !newState.redTeam || !newState.blueTeam) return;
+      if (JSON.stringify(appState) === JSON.stringify(newState)) return;
+      appState = newState;
+      updateAdminInputsFromState();
+      renderApp();
+    }
+
+    // Safety Fallback & Initial state setup
+    function ensureValidState() {
+      if (!appState.redTeam || !appState.redTeam.picks || appState.redTeam.picks.length === 0) {
+        appState.redTeam = {
+          name: "CC CORE",
+          coach: "COACH: CEROS",
+          picks: [
+            { player: "YUKIO", champ: "Olaf", active: false },
+            { player: "k4sen", champ: "Lillia", active: false },
+            { player: "Kuzuha", champ: "Morgana", active: false },
+            { player: "Tatsumaki Chise", champ: "Janna", active: false },
+            { player: "Konkun Aria", champ: "Lulu", active: true }
+          ],
+          fearless: ["Renekton", "JarvanIV", "Ornn", "Lucian"],
+          bans: ["Caitlyn", "Maokai", "KSante", "Jayce", "Rumble"]
+        };
+      }
+      if (!appState.blueTeam || !appState.blueTeam.picks || appState.blueTeam.picks.length === 0) {
+        appState.blueTeam = {
+          name: "IT CORE",
+          coach: "COACH: EUGEO",
+          picks: [
+            { player: "mitani1", champ: "Ryze", active: false },
+            { player: "Alpha Azur", champ: "Diana", active: false },
+            { player: "Takaya Special", champ: "Zed", active: false },
+            { player: "Gonkane", champ: "Ashe", active: false },
+            { player: "RegleshLionheart", champ: "Seraphine", active: false }
+          ],
+          fearless: ["Aatrox", "LeeSin", "Orianna", "Varus"],
+          bans: ["Briar", "Galio", "Yone", "Sejuani", "Azir"]
+        };
+      }
+    }
+
+    window.onload = function() {
+      ensureValidState();
+      initSyncSystem();
+      renderAdminSelectInputs();
+      updateAdminInputsFromState();
+      renderApp();
+    };
+  </script>
+</body>
+</html>
