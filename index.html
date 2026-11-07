@@ -449,9 +449,9 @@
     let sseEventSource = null;
     let lastBroadcastTime = 0;
 
-    // URLパラメータでrole=adminが指定されているかチェック
+    // URLパラメータで ?obs が指定されているかチェック（指定なしの場合はデフォルト管理画面）
     const urlParams = new URLSearchParams(window.location.search);
-    const isAdminRole = urlParams.get('role') === 'admin';
+    const isObsRole = urlParams.has('obs');
 
     // Champion Master List with Japanese Names for Display
     const CHAMPION_MAP = [
@@ -673,18 +673,19 @@
 
     function openBroadcastOverlayWindow() {
       const baseUrl = window.location.origin + window.location.pathname;
-      window.open(baseUrl, '_blank');
+      window.open(baseUrl + '?obs', '_blank');
     }
 
     function copyOBSUrl() {
       const baseUrl = window.location.origin + window.location.pathname;
+      const obsUrl = baseUrl + '?obs';
       const dummy = document.createElement('textarea');
       document.body.appendChild(dummy);
-      dummy.value = baseUrl;
+      dummy.value = obsUrl;
       dummy.select();
       document.execCommand('copy');
       document.body.removeChild(dummy);
-      alert('OBS用URLをクリップボードにコピーしました！\nOBSのブラウザソースURLに貼り付けてご利用ください。\n\n' + baseUrl);
+      alert('OBS用URLをクリップボードにコピーしました！\nOBSのブラウザソースURLに貼り付けてご利用ください。\n\n' + obsUrl);
     }
 
     function changeSyncTopic() {
@@ -1204,10 +1205,11 @@
             if (JSON.stringify(parsed) !== JSON.stringify(appState)) {
               appState = parsed;
               renderApp();
+              updateAdminInputsFromState();
             }
           } catch(e) {}
         }
-      }, 500);
+      }, 100);
 
       // 3. ntfy SSE Setup
       setupNtfySSE(currentSyncTopic);
@@ -1262,11 +1264,14 @@
       renderAdminSelectInputs();
       renderApp();
 
-      if (isAdminRole) {
+      // ?obs が指定されていない場合（通常URL）は自動的に管理パネルを開く
+      if (!isObsRole) {
         const panel = document.getElementById('adminPanel');
         if (panel) panel.classList.remove('hidden');
       }
     };
   </script>
+</body>
+</html>
 </body>
 </html>
