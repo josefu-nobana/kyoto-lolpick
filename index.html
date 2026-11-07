@@ -142,12 +142,15 @@
         <div class="flex items-center justify-between">
           <span class="text-slate-400 font-bold">リアルタイム同期状態:</span>
           <span id="syncStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-            <i class="fa-solid fa-bolt"></i> 即時同期接続中
+            <i class="fa-solid fa-bolt"></i> 同期オンライン
           </span>
         </div>
-        <div class="pt-1 flex gap-2">
-          <button onclick="openBroadcastOverlayWindow()" class="w-full bg-slate-800 hover:bg-slate-700 text-lolGold border border-lolGold/40 py-1 px-2 rounded font-bold text-[11px] flex items-center justify-center gap-1.5 transition">
-            <i class="fa-solid fa-up-right-from-square"></i> OBS用オーバーレイを別タブで開く
+        <div class="pt-1 flex flex-col gap-1.5">
+          <button onclick="copyOBSUrl()" class="w-full bg-slate-800 hover:bg-slate-700 text-lolGold border border-lolGold/40 py-1.5 px-2 rounded font-bold text-[11px] flex items-center justify-center gap-1.5 transition">
+            <i class="fa-solid fa-copy"></i> OBS表示用URLをコピー
+          </button>
+          <button onclick="openBroadcastOverlayWindow()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 py-1 px-2 rounded text-[10px] flex items-center justify-center gap-1.5 transition">
+            <i class="fa-solid fa-up-right-from-square"></i> OBS用画面を別タブで表示
           </button>
         </div>
       </div>
@@ -441,10 +444,14 @@
     const DDRAGON_VER = '14.10.1';
     const DEFAULT_SYNC_TOPIC = 'lol_draft_sync_room_2026';
     const CLIENT_ID = Math.random().toString(36).substring(2, 9); // 自クライアント判定用ID
-    let currentSyncTopic = DEFAULT_SYNC_TOPIC;
+    let currentSyncTopic = localStorage.getItem('lol_sync_topic') || DEFAULT_SYNC_TOPIC;
     let syncBroadcastChannel = null;
     let sseEventSource = null;
     let lastBroadcastTime = 0;
+
+    // URLパラメータでrole=adminが指定されているかチェック
+    const urlParams = new URLSearchParams(window.location.search);
+    const isAdminRole = urlParams.get('role') === 'admin';
 
     // Champion Master List with Japanese Names for Display
     const CHAMPION_MAP = [
@@ -665,13 +672,26 @@
     }
 
     function openBroadcastOverlayWindow() {
-      window.open(window.location.href, '_blank');
+      const baseUrl = window.location.origin + window.location.pathname;
+      window.open(baseUrl, '_blank');
+    }
+
+    function copyOBSUrl() {
+      const baseUrl = window.location.origin + window.location.pathname;
+      const dummy = document.createElement('textarea');
+      document.body.appendChild(dummy);
+      dummy.value = baseUrl;
+      dummy.select();
+      document.execCommand('copy');
+      document.body.removeChild(dummy);
+      alert('OBS用URLをクリップボードにコピーしました！\nOBSのブラウザソースURLに貼り付けてご利用ください。\n\n' + baseUrl);
     }
 
     function changeSyncTopic() {
       const input = document.getElementById('inputSyncTopic');
       if (input && input.value.trim() !== '') {
         currentSyncTopic = input.value.trim();
+        localStorage.setItem('lol_sync_topic', currentSyncTopic);
         setupNtfySSE(currentSyncTopic);
       }
     }
@@ -1087,47 +1107,89 @@
       p2Container.innerHTML = p2Html;
     }
 
-    // --- ENHANCED REALTIME SYNC SYSTEM FOR DEPLOYED WEBSITES ---
-    function initSyncSystem() {
-      // 1. BroadcastChannel (同一ブラウザ・タスク・OBSブラウザソース間での超高速ローカル通信)
-      if ('BroadcastChannel' in window) {
+    // Safety guard to ensure appState structure is always intact
+    function ensureValidState() {
+      if (!appState || typeof appState !== 'object') {
+        appState = {};
+      }
+      if (!appState.redTeam) appState.redTeam = { name: "CC CORE", coach: "COACH: CEROS", picks: [], fearless: [], bans: [] };
+      if (!appState.blueTeam) appState.blueTeam = { name: "IT CORE", coach: "COACH: EUGEO", picks: [], fearless: [], bans: [] };
+      
+      for (let i = 0; i < 5; i++) {
+        if (!appState.redTeam.picks[i]) appState.redTeam.picks[i] = { player: `Player ${i+1}`, champ: '' };
+        if (!appState.blueTeam.picks[i]) appState.blueTeam.picks[i] = { player: `Player ${i+1}`, champ: '' };
+        if (appState.redTeam.bans[i] === undefined) appState.redTeam.bans[i] = '';
+        if (appState.blueTeam.bans[i] === undefined) appState.blueTeam.bans[i] = '';
+      }
+      if (!Array.isArray(appState.redTeam.fearless)) appState.redTeam.fearless = [];
+      if (!Array.isArray(appState.blueTeam.fearless)) appState.blueTeam.fearless = [];
+    }
+
+    // Broadcast State to BroadcastChannel & LocalStorage & ntfy
+    function broadcastState(newState) {
+      lastBroadcastTime = Date.now();
+      const payload = { senderId: CLIENT_ID, timestamp: lastBroadcastTime, data: newState };
+      
+      // 1. LocalStorage Sync
+      localStorage.setItem('lol_draft_app_state', JSON.stringify(newState));
+
+      // 2. BroadcastChannel Sync
+      if (syncBroadcastChannel) {
         try {
-          syncBroadcastChannel = new BroadcastChannel('lol_draft_broadcast_channel');
-          syncBroadcastChannel.onmessage = (event) => {
-            if (event.data && event.data.type === 'STATE_UPDATE' && event.data.clientId !== CLIENT_ID) {
-              applyRemoteState(event.data.state);
-            }
-          };
-        } catch(e) {
-          console.warn('BroadcastChannel error:', e);
+          syncBroadcastChannel.postMessage(payload);
+        } catch (e) {
+          console.warn("BroadcastChannel error:", e);
         }
       }
 
-      // 2. Storage Event (タブ間・ウィンドウ間のミリ秒レスポンス同期)
+      // 3. Remote Server Push (ntfy.sh) for Cross-Network / Separate Browser Windows
+      fetch(`https://ntfy.sh/${currentSyncTopic}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(err => console.warn("Remote sync push error:", err));
+    }
+
+    // --- ENHANCED REALTIME SYNC SYSTEM FOR DEPLOYED WEBSITES (GitHub Pages Optimized) ---
+    function initSyncSystem() {
+      // Restore cached state from local storage if exists
+      const savedState = localStorage.getItem('lol_draft_app_state');
+      if (savedState) {
+        try {
+          appState = JSON.parse(savedState);
+        } catch(e) {
+          console.warn("Failed to parse saved state", e);
+        }
+      }
+
+      // 1. Inter-tab BroadcastChannel setup
+      try {
+        syncBroadcastChannel = new BroadcastChannel('lol_draft_broadcast_channel');
+        syncBroadcastChannel.onmessage = (event) => {
+          if (event.data && event.data.senderId !== CLIENT_ID && event.data.data) {
+            appState = event.data.data;
+            renderApp();
+            updateAdminInputsFromState();
+          }
+        };
+      } catch (e) {
+        console.warn("BroadcastChannel not supported", e);
+      }
+
+      // 2. Window LocalStorage Event (cross-window sync)
       window.addEventListener('storage', (e) => {
-        if (e.key === 'lol_draft_state' && e.newValue) {
+        if (e.key === 'lol_draft_app_state' && e.newValue) {
           try {
-            const data = JSON.parse(e.newValue);
-            if (data && data.clientId !== CLIENT_ID && data.state) {
-              applyRemoteState(data.state);
-            }
-          } catch (err) {}
+            appState = JSON.parse(e.newValue);
+            renderApp();
+            updateAdminInputsFromState();
+          } catch(err) {
+            console.warn("Storage sync error", err);
+          }
         }
       });
 
-      // 保存済みローカル状態の復元
-      const saved = localStorage.getItem('lol_draft_state');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          const stateData = parsed.state || parsed;
-          if (stateData && stateData.redTeam && stateData.blueTeam) {
-            appState = stateData;
-          }
-        } catch (e) {}
-      }
-
-      // 3. ネットワーク間リアルタイム同期 (ntfy SSE Hub)
+      // 3. ntfy SSE Setup
       setupNtfySSE(currentSyncTopic);
     }
 
@@ -1135,105 +1197,59 @@
       if (sseEventSource) {
         sseEventSource.close();
       }
+
       try {
         sseEventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
         sseEventSource.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data);
-            if (data && data.message) {
-              const payload = JSON.parse(data.message);
-              if (payload.type === 'STATE_UPDATE' && payload.clientId !== CLIENT_ID) {
-                applyRemoteState(payload.state);
+            const parsed = JSON.parse(event.data);
+            if (parsed && parsed.message) {
+              const payload = JSON.parse(parsed.message);
+              if (payload && payload.senderId !== CLIENT_ID && payload.data) {
+                appState = payload.data;
+                renderApp();
+                updateAdminInputsFromState();
               }
             }
-          } catch (err) {}
+          } catch(e) {
+            // Ignore non-json system ping messages
+          }
         };
-      } catch (e) {
-        console.warn('ntfy SSE connection failed:', e);
-      }
-    }
 
-    function broadcastState(state) {
-      const syncPayload = {
-        type: 'STATE_UPDATE',
-        clientId: CLIENT_ID,
-        timestamp: Date.now(),
-        state: state
-      };
-
-      // 1. localStorage 同期（同一PC内のOBS/ブラウザ間即時反映）
-      try {
-        localStorage.setItem('lol_draft_state', JSON.stringify(syncPayload));
-      } catch(e) {}
-
-      // 2. BroadcastChannel 同期
-      if (syncBroadcastChannel) {
-        try {
-          syncBroadcastChannel.postMessage(syncPayload);
-        } catch(e) {}
-      }
-
-      // 3. ntfy ネットワーク同期（レートリミット保護付き）
-      const now = Date.now();
-      if (now - lastBroadcastTime > 100) { // 100ms スロットリング
-        lastBroadcastTime = now;
-        fetch(`https://ntfy.sh/${currentSyncTopic}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(syncPayload)
-        }).catch(() => {});
-      }
-    }
-
-    function applyRemoteState(newState) {
-      if (!newState || !newState.redTeam || !newState.blueTeam) return;
-      if (JSON.stringify(appState) === JSON.stringify(newState)) return;
-      appState = newState;
-      updateAdminInputsFromState();
-      renderApp();
-    }
-
-    // Safety Fallback & Initial state setup
-    function ensureValidState() {
-      if (!appState.redTeam || !appState.redTeam.picks || appState.redTeam.picks.length === 0) {
-        appState.redTeam = {
-          name: "CC CORE",
-          coach: "COACH: CEROS",
-          picks: [
-            { player: "YUKIO", champ: "Olaf", active: false },
-            { player: "k4sen", champ: "Lillia", active: false },
-            { player: "Kuzuha", champ: "Morgana", active: false },
-            { player: "Tatsumaki Chise", champ: "Janna", active: false },
-            { player: "Konkun Aria", champ: "Lulu", active: true }
-          ],
-          fearless: ["Renekton", "JarvanIV", "Ornn", "Lucian"],
-          bans: ["Caitlyn", "Maokai", "KSante", "Jayce", "Rumble"]
+        sseEventSource.onerror = () => {
+          const badge = document.getElementById('syncStatusBadge');
+          if (badge) {
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40";
+            badge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ローカル同期中';
+          }
         };
-      }
-      if (!appState.blueTeam || !appState.blueTeam.picks || appState.blueTeam.picks.length === 0) {
-        appState.blueTeam = {
-          name: "IT CORE",
-          coach: "COACH: EUGEO",
-          picks: [
-            { player: "mitani1", champ: "Ryze", active: false },
-            { player: "Alpha Azur", champ: "Diana", active: false },
-            { player: "Takaya Special", champ: "Zed", active: false },
-            { player: "Gonkane", champ: "Ashe", active: false },
-            { player: "RegleshLionheart", champ: "Seraphine", active: false }
-          ],
-          fearless: ["Aatrox", "LeeSin", "Orianna", "Varus"],
-          bans: ["Briar", "Galio", "Yone", "Sejuani", "Azir"]
+
+        sseEventSource.onopen = () => {
+          const badge = document.getElementById('syncStatusBadge');
+          if (badge) {
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+            badge.innerHTML = '<i class="fa-solid fa-bolt"></i> 同期オンライン';
+          }
         };
+      } catch (err) {
+        console.warn("ntfy SSE setup failed", err);
       }
     }
 
+    // App Initialization on Page Load
     window.onload = function() {
-      ensureValidState();
       initSyncSystem();
       renderAdminSelectInputs();
-      updateAdminInputsFromState();
       renderApp();
+
+      if (isAdminRole) {
+        const panel = document.getElementById('adminPanel');
+        if (panel) panel.classList.remove('hidden');
+      }
     };
+  </script>
+</body>
+</html>
   </script>
 </body>
 </html>
