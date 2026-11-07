@@ -351,13 +351,13 @@
         <div class="col-span-6 h-full flex flex-col justify-between p-3 relative">
           
           <!-- WEBCAM / CASTER TRANSPARENT WINDOW -->
-          <div class="w-full h-[590px] border-2 border-slate-800/80 rounded-xl bg-slate-950/30 flex items-center justify-center relative overflow-hidden group">
-            <div class="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-lolGold"></div>
-            <div class="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-lolGold"></div>
-            <div class="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-lolGold"></div>
-            <div class="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-lolGold"></div>
+          <div id="casterWindow" class="w-full h-[590px] border-2 border-slate-800/80 rounded-xl bg-slate-950/30 flex items-center justify-center relative overflow-hidden group transition-colors duration-300">
+            <div class="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-lolGold z-10"></div>
+            <div class="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-lolGold z-10"></div>
+            <div class="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-lolGold z-10"></div>
+            <div class="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-lolGold z-10"></div>
 
-            <div class="text-center text-slate-500/80 pointer-events-none">
+            <div class="text-center text-slate-500/80 pointer-events-none z-10">
               <i class="fa-solid fa-headset text-5xl mb-2 text-lolGold/40"></i>
               <p class="font-orbitron font-bold tracking-widest text-sm text-slate-400">LIVE CASTER / STREAM FEED AREA</p>
               <p class="text-xs text-slate-600 mt-1">実況解説・配信用キャスターカメラ枠（透明/背景透過）</p>
@@ -988,331 +988,249 @@
     function renderApp() {
       ensureValidState();
 
-      // Apply Chroma Key Background Color
+      // Apply Chroma Key Background Color ONLY to Caster Area
       const canvas = document.getElementById('broadcastCanvas');
+      const casterWindow = document.getElementById('casterWindow');
+
       if (canvas) {
+        // 全体の背景は常に本来の綺麗なダークグラデーションに固定
+        canvas.style.background = 'linear-gradient(180deg, #070a0f 0%, #0c121d 100%)';
+      }
+
+      if (casterWindow) {
         if (appState.chromaBg === 'green') {
-          canvas.style.background = '#00FF00';
+          casterWindow.style.backgroundColor = '#00FF00';
         } else if (appState.chromaBg === 'blue') {
-          canvas.style.background = '#0000FF';
+          casterWindow.style.backgroundColor = '#0000FF';
         } else if (appState.chromaBg === 'magenta') {
-          canvas.style.background = '#FF00FF';
+          casterWindow.style.backgroundColor = '#FF00FF';
         } else {
-          canvas.style.background = 'linear-gradient(180deg, #070a0f 0%, #0c121d 100%)';
+          casterWindow.style.backgroundColor = 'rgba(2, 6, 23, 0.3)'; // デフォルト（黒半透明）
         }
       }
 
       // Top Header
       document.getElementById('displayRedTeam').textContent = appState.redTeam.name;
       document.getElementById('displayRedCoach').textContent = appState.redTeam.coach;
-      document.getElementById('displayRedLogo').textContent = (appState.redTeam.name || 'RED').substring(0, 2).toUpperCase();
-
       document.getElementById('displayBlueTeam').textContent = appState.blueTeam.name;
-      document.getElementById('displayBlueCoach').textContent = appState.blueTeam.coach;
-      document.getElementById('displayBlueLogo').textContent = (appState.blueTeam.name || 'BLUE').substring(0, 2).toUpperCase();
+      document.getElementById('displayBlueCoach').textContent = appState.blueCoach ? appState.blueCoach : appState.blueTeam.coach;
 
-      // Render Vertical Champion Cards
-      renderPicks('red', appState.redTeam.picks);
-      renderPicks('blue', appState.blueTeam.picks);
+      document.getElementById('displayRedLogo').textContent = (appState.redTeam.name || 'CC').substring(0, 2).toUpperCase();
+      document.getElementById('displayBlueLogo').textContent = (appState.blueTeam.name || 'IT').substring(0, 2).toUpperCase();
 
-      // Render Fearless Icon Arrays
-      renderFearless('red', appState.redTeam.fearless);
-      renderFearless('blue', appState.blueTeam.fearless);
+      // 1. Red Picks
+      renderPicks('redPicksContainer', appState.redTeam.picks, 'red');
+      // 2. Blue Picks
+      renderPicks('bluePicksContainer', appState.blueTeam.picks, 'blue');
 
-      // Render Bans
-      renderBans('red', appState.redTeam.bans);
-      renderBans('blue', appState.blueTeam.bans);
+      // 3. Fearless Picks
+      renderFearlessIcons('redFearlessContainer', appState.redTeam.fearless, 'red');
+      renderFearlessIcons('blueFearlessContainer', appState.blueTeam.fearless, 'blue');
+
+      // 4. Bans
+      renderBans('redBansPhase1', appState.redTeam.bans.slice(0, 3));
+      renderBans('redBansPhase2', appState.redTeam.bans.slice(3, 5));
+      renderBans('blueBansPhase1', appState.blueTeam.bans.slice(0, 3));
+      renderBans('blueBansPhase2', appState.blueTeam.bans.slice(3, 5));
     }
 
-    function renderPicks(side, picks) {
-      const container = document.getElementById(`${side}PicksContainer`);
+    function renderPicks(containerId, picks, side) {
+      const container = document.getElementById(containerId);
       if (!container) return;
 
-      const isRed = (side === 'red');
+      const isRed = side === 'red';
+      const borderGlowClass = isRed ? 'border-rose-950/80 hover:border-rose-600' : 'border-teal-950/80 hover:border-teal-400';
+      const textTeamClass = isRed ? 'text-rose-400' : 'text-teal-300';
+      const overlayGradient = isRed ? 'champ-overlay-red' : 'champ-overlay-blue';
+
       let html = '';
-
-      picks.forEach((pick) => {
-        const splashUrl = getChampSplashUrl(pick.champ);
-        const champKey = formatChampName(pick.champ);
-        const displayChampName = champKey || '';
-        const activeClass = 'border border-slate-800/80';
-        const fallbackSrc = "https://placehold.co/1280x720/0f172a/334155?text=DRAFT";
-
-        if (isRed) {
-          html += `
-            <div class="relative w-full h-[148px] rounded-xl overflow-hidden bg-slate-950 ${activeClass} transition-all duration-300 group">
-              <img src="${splashUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 scale-105 group-hover:scale-110">
-              <div class="absolute inset-0 champ-overlay-red"></div>
-              
-              <div class="absolute inset-0 p-4 flex flex-col justify-between z-10">
-                <span class="font-orbitron font-extrabold text-2xl text-white tracking-wider drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] truncate">
-                  ${pick.player}
-                </span>
-                <span class="self-end font-orbitron font-black text-xs text-rose-300 tracking-widest uppercase bg-rose-950/70 px-2 py-0.5 rounded border border-rose-500/40">
-                  ${displayChampName}
-                </span>
-              </div>
-            </div>
-          `;
-        } else {
-          html += `
-            <div class="relative w-full h-[148px] rounded-xl overflow-hidden bg-slate-950 ${activeClass} transition-all duration-300 group">
-              <img src="${splashUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 scale-105 group-hover:scale-110">
-              <div class="absolute inset-0 champ-overlay-blue"></div>
-              
-              <div class="absolute inset-0 p-4 flex flex-col justify-between items-end z-10 text-right">
-                <span class="font-orbitron font-extrabold text-2xl text-white tracking-wider drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] truncate">
-                  ${pick.player}
-                </span>
-                <span class="self-start font-orbitron font-black text-xs text-teal-300 tracking-widest uppercase bg-teal-950/70 px-2 py-0.5 rounded border border-teal-400/40">
-                  ${displayChampName}
-                </span>
-              </div>
-            </div>
-          `;
-        }
-      });
-
-      container.innerHTML = html;
-    }
-
-    function renderFearless(side, fearlessArr) {
-      const container = document.getElementById(`${side}FearlessContainer`);
-      if (!container) return;
-
-      const isRed = (side === 'red');
-      let html = '';
-
-      (fearlessArr || []).forEach(champ => {
-        if (!champ) return;
-        const iconUrl = getChampIconUrl(champ);
-        const borderColor = isRed ? 'border-rose-900/80' : 'border-teal-900/80';
-        const fallbackSrc = "https://placehold.co/120x120/0f172a/334155?text=FEARLESS";
+      picks.forEach(p => {
+        const splashUrl = getChampSplashUrl(p.champ);
+        const activeClass = p.active ? (isRed ? 'active-glow-red' : 'active-glow-blue') : '';
+        const formattedName = formatChampName(p.champ);
 
         html += `
-          <div class="w-7 h-7 rounded border ${borderColor} overflow-hidden bg-slate-900 shadow-md shrink-0">
-            <img src="${iconUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="w-full h-full object-cover" title="${champ}">
+          <div class="relative w-full h-[145px] rounded-xl border-2 ${borderGlowClass} ${activeClass} bg-slate-950 overflow-hidden shadow-lg transition-all duration-300 flex items-center">
+            <!-- Splash Art Background -->
+            <div class="absolute inset-0 w-full h-full bg-cover bg-center transition-transform duration-500 hover:scale-105"
+                 style="background-image: url('${splashUrl}');">
+            </div>
+            
+            <!-- Side Color Overlay Gradient -->
+            <div class="absolute inset-0 ${overlayGradient}"></div>
+
+            <!-- Content Container -->
+            <div class="relative z-10 w-full px-5 flex flex-col justify-between h-full py-4 ${isRed ? 'items-start text-left' : 'items-end text-right'}">
+              <div>
+                <span class="font-orbitron font-extrabold text-2xl text-white tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] uppercase block">
+                  ${p.player}
+                </span>
+                <span class="font-orbitron font-bold text-xs ${textTeamClass} tracking-wider block uppercase">
+                  ${formattedName}
+                </span>
+              </div>
+            </div>
           </div>
         `;
       });
-
       container.innerHTML = html;
     }
 
-    function renderBans(side, bansArr) {
-      const p1Container = document.getElementById(`${side}BansPhase1`);
-      const p2Container = document.getElementById(`${side}BansPhase2`);
+    function renderFearlessIcons(containerId, fearlessList, side) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
 
-      if (!p1Container || !p2Container) return;
-
-      const isRed = (side === 'red');
-      const borderColor = isRed ? 'border-rose-900/80' : 'border-teal-900/80';
-      const fallbackSrc = "https://placehold.co/120x120/0f172a/334155?text=BAN";
-
-      let p1Html = '';
-      for (let i = 0; i < 3; i++) {
-        const champ = bansArr[i];
-        if (champ) {
-          const iconUrl = getChampIconUrl(champ);
-          p1Html += `
-            <div class="w-10 h-10 rounded border ${borderColor} overflow-hidden bg-slate-900 ban-card shadow-md">
-              <img src="${iconUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="w-full h-full object-cover grayscale brightness-75">
-            </div>
-          `;
-        } else {
-          p1Html += `
-            <div class="w-10 h-10 rounded border border-slate-800 bg-slate-950 flex items-center justify-center text-slate-700 font-bold text-xs">
-              BAN
-            </div>
-          `;
-        }
-      }
-
-      let p2Html = '';
-      for (let i = 3; i < 5; i++) {
-        const champ = bansArr[i];
-        if (champ) {
-          const iconUrl = getChampIconUrl(champ);
-          p2Html += `
-            <div class="w-10 h-10 rounded border ${borderColor} overflow-hidden bg-slate-900 ban-card shadow-md">
-              <img src="${iconUrl}" onError="this.onerror=null;this.src='${fallbackSrc}';" class="w-full h-full object-cover grayscale brightness-75">
-            </div>
-          `;
-        } else {
-          p2Html += `
-            <div class="w-10 h-10 rounded border border-slate-800 bg-slate-950 flex items-center justify-center text-slate-700 font-bold text-xs">
-              BAN
-            </div>
-          `;
-        }
-      }
-
-      p1Container.innerHTML = p1Html;
-      p2Container.innerHTML = p2Html;
+      let html = '';
+      (fearlessList || []).forEach(champ => {
+        const iconUrl = getChampIconUrl(champ);
+        html += `
+          <div class="w-10 h-10 rounded-lg border border-slate-700 bg-slate-900 overflow-hidden shadow group relative flex-shrink-0" title="${champ}">
+            <img src="${iconUrl}" class="w-full h-full object-cover group-hover:scale-110 transition-transform" onerror="this.onerror=null; this.src='https://placehold.co/120x120/0f172a/334155?text=NA';">
+          </div>
+        `;
+      });
+      container.innerHTML = html;
     }
 
-    // Safety guard to ensure appState structure is always intact
+    function renderBans(containerId, bansList) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      let html = '';
+      for (let i = 0; i < (bansList ? bansList.length : 0); i++) {
+        const champ = bansList[i];
+        const iconUrl = getChampIconUrl(champ);
+        
+        if (champ) {
+          html += `
+            <div class="w-12 h-12 rounded-lg border border-rose-900/60 bg-slate-900 overflow-hidden relative ban-card shadow">
+              <img src="${iconUrl}" class="w-full h-full object-cover opacity-60 grayscale" onerror="this.onerror=null; this.src='https://placehold.co/120x120/0f172a/334155?text=BAN';">
+            </div>
+          `;
+        } else {
+          html += `
+            <div class="w-12 h-12 rounded-lg border border-slate-800 bg-slate-950/60 flex items-center justify-center">
+              <span class="text-[10px] font-orbitron font-bold text-slate-600 uppercase">BAN</span>
+            </div>
+          `;
+        }
+      }
+      container.innerHTML = html;
+    }
+
     function ensureValidState() {
       if (!appState || typeof appState !== 'object') {
-        appState = {};
+        appState = {
+          gameCode: "D6-G2",
+          patch: "PATCH 26.22",
+          timer: 24,
+          chromaBg: "default",
+          redTeam: { name: "CC CORE", coach: "COACH: CEROS", picks: [], fearless: [], bans: [] },
+          blueTeam: { name: "IT CORE", coach: "COACH: EUGEO", picks: [], fearless: [], bans: [] }
+        };
       }
-      if (!appState.chromaBg) appState.chromaBg = "default";
       if (!appState.redTeam) appState.redTeam = { name: "CC CORE", coach: "COACH: CEROS", picks: [], fearless: [], bans: [] };
       if (!appState.blueTeam) appState.blueTeam = { name: "IT CORE", coach: "COACH: EUGEO", picks: [], fearless: [], bans: [] };
-      
-      for (let i = 0; i < 5; i++) {
-        if (!appState.redTeam.picks[i]) appState.redTeam.picks[i] = { player: `Player ${i+1}`, champ: '' };
-        if (!appState.blueTeam.picks[i]) appState.blueTeam.picks[i] = { player: `Player ${i+1}`, champ: '' };
-        if (appState.redTeam.bans[i] === undefined) appState.redTeam.bans[i] = '';
-        if (appState.blueTeam.bans[i] === undefined) appState.blueTeam.bans[i] = '';
+
+      if (!Array.isArray(appState.redTeam.picks) || appState.redTeam.picks.length < 5) {
+        appState.redTeam.picks = [
+          { player: "YUKIO", champ: "Olaf", active: false },
+          { player: "k4sen", champ: "Lillia", active: false },
+          { player: "Kuzuha", champ: "Morgana", active: false },
+          { player: "Tatsumaki Chise", champ: "Janna", active: false },
+          { player: "Konkun Aria", champ: "Lulu", active: false }
+        ];
       }
-      if (!Array.isArray(appState.redTeam.fearless)) appState.redTeam.fearless = [];
-      if (!Array.isArray(appState.blueTeam.fearless)) appState.blueTeam.fearless = [];
+      if (!Array.isArray(appState.blueTeam.picks) || appState.blueTeam.picks.length < 5) {
+        appState.blueTeam.picks = [
+          { player: "mitani1", champ: "Ryze", active: false },
+          { player: "Alpha Azur", champ: "Diana", active: false },
+          { player: "Takaya Special", champ: "Zed", active: false },
+          { player: "Gonkane", champ: "Ashe", active: false },
+          { player: "RegleshLionheart", champ: "Seraphine", active: false }
+        ];
+      }
     }
 
-    // Broadcast State to BroadcastChannel & LocalStorage & ntfy
-    function broadcastState(newState) {
-      lastBroadcastTime = Date.now();
-      const payload = { senderId: CLIENT_ID, timestamp: lastBroadcastTime, data: newState };
+    // Real-time Sync System Initialization
+    function broadcastState(state) {
+      const payload = {
+        sender: CLIENT_ID,
+        timestamp: Date.now(),
+        state: state
+      };
       
-      // 1. LocalStorage Sync (Instant cross-window trigger)
-      try {
-        localStorage.setItem('lol_draft_app_state', JSON.stringify(newState));
-        localStorage.setItem('lol_draft_ping', lastBroadcastTime.toString());
-      } catch(e) {}
+      const jsonStr = JSON.stringify(payload);
+      localStorage.setItem('lol_draft_sync_state', jsonStr);
 
-      // 2. BroadcastChannel Sync
       if (syncBroadcastChannel) {
         try {
           syncBroadcastChannel.postMessage(payload);
         } catch (e) {
-          console.warn("BroadcastChannel error:", e);
+          console.error("BroadcastChannel error:", e);
         }
       }
-
-      // 3. Remote Server Push (ntfy.sh) for Cross-Network / Separate Browsers
-      fetch(`https://ntfy.sh/${currentSyncTopic}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(err => console.warn("Remote sync push error:", err));
     }
 
-    // --- ENHANCED REALTIME SYNC SYSTEM FOR DEPLOYED WEBSITES ---
     function initSyncSystem() {
-      // Restore cached state from local storage if exists
-      const savedState = localStorage.getItem('lol_draft_app_state');
-      if (savedState) {
-        try {
-          appState = JSON.parse(savedState);
-        } catch(e) {
-          console.warn("Failed to parse saved state", e);
-        }
-      }
-
-      // 1. Inter-tab BroadcastChannel setup
+      // 1. BroadcastChannel
       try {
-        syncBroadcastChannel = new BroadcastChannel('lol_draft_broadcast_channel');
+        syncBroadcastChannel = new BroadcastChannel('lol_draft_channel_' + currentSyncTopic);
         syncBroadcastChannel.onmessage = (event) => {
-          if (event.data && event.data.senderId !== CLIENT_ID && event.data.data) {
-            appState = event.data.data;
+          if (event.data && event.data.sender !== CLIENT_ID && event.data.state) {
+            appState = event.data.state;
             renderApp();
-            updateAdminInputsFromState();
+            if (!isObsRole) {
+              updateAdminInputsFromState();
+            }
           }
         };
       } catch (e) {
         console.warn("BroadcastChannel not supported", e);
       }
 
-      // 2. Window LocalStorage Event (cross-window/OBS Browser Source sync)
+      // 2. LocalStorage Event listener (for multi-tab sync)
       window.addEventListener('storage', (e) => {
-        if (e.key === 'lol_draft_app_state' || e.key === 'lol_draft_ping') {
-          const freshState = localStorage.getItem('lol_draft_app_state');
-          if (freshState) {
-            try {
-              appState = JSON.parse(freshState);
-              renderApp();
-              updateAdminInputsFromState();
-            } catch(err) {
-              console.warn("Storage sync error", err);
-            }
-          }
-        }
-      });
-
-      // Periodic check for seamless instant sync in OBS browser dock
-      setInterval(() => {
-        const freshState = localStorage.getItem('lol_draft_app_state');
-        if (freshState) {
+        if (e.key === 'lol_draft_sync_state' && e.newValue) {
           try {
-            const parsed = JSON.parse(freshState);
-            if (JSON.stringify(parsed) !== JSON.stringify(appState)) {
-              appState = parsed;
+            const data = JSON.parse(e.newValue);
+            if (data.sender !== CLIENT_ID && data.state) {
+              appState = data.state;
               renderApp();
-              updateAdminInputsFromState();
-            }
-          } catch(e) {}
-        }
-      }, 100);
-
-      // 3. ntfy SSE Setup
-      setupNtfySSE(currentSyncTopic);
-    }
-
-    function setupNtfySSE(topic) {
-      if (sseEventSource) {
-        sseEventSource.close();
-      }
-
-      try {
-        sseEventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
-        sseEventSource.onmessage = (event) => {
-          try {
-            const parsed = JSON.parse(event.data);
-            if (parsed && parsed.message) {
-              const payload = JSON.parse(parsed.message);
-              if (payload && payload.senderId !== CLIENT_ID && payload.data) {
-                appState = payload.data;
-                renderApp();
+              if (!isObsRole) {
                 updateAdminInputsFromState();
               }
             }
-          } catch(e) {
-            // Ignore non-json system ping messages
+          } catch (err) {
+            console.error("Storage sync parse error:", err);
           }
-        };
-
-        sseEventSource.onerror = () => {
-          const badge = document.getElementById('syncStatusBadge');
-          if (badge) {
-            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40";
-            badge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ローカル同期中';
-          }
-        };
-
-        sseEventSource.onopen = () => {
-          const badge = document.getElementById('syncStatusBadge');
-          if (badge) {
-            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
-            badge.innerHTML = '<i class="fa-solid fa-bolt"></i> 同期オンライン';
-          }
-        };
-      } catch (err) {
-        console.warn("ntfy SSE setup failed", err);
-      }
+        }
+      });
     }
 
-    // App Initialization on Page Load
+    // Application Bootstrap On Load
     window.onload = function() {
-      initSyncSystem();
-      renderAdminSelectInputs();
-      renderApp();
+      // Check stored state
+      const savedState = localStorage.getItem('lol_draft_sync_state');
+      if (savedState) {
+        try {
+          const parsed = JSON.parse(savedState);
+          if (parsed && parsed.state) {
+            appState = parsed.state;
+          }
+        } catch (e) {}
+      }
 
-      // ?obs が指定されていない場合（通常URL）は自動的に管理パネルを開く
+      initSyncSystem();
+
+      // OBSモード（?obs）であれば管理画面パネルを非表示、通常時なら管理パネルを初期化
       if (!isObsRole) {
+        updateAdminInputsFromState();
         const panel = document.getElementById('adminPanel');
         if (panel) panel.classList.remove('hidden');
       }
+
+      renderApp();
     };
   </script>
 </body>
