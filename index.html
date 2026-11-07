@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+JP:wght@500;700;900&family=Teko:wght@600;700&display=swap" rel="stylesheet">
+  <!-- Peer2Peer Realtime Cloud Relay (Pusher for cross-tab & cross-device sync) -->
+  <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
   
   <script>
     tailwind.config = {
@@ -83,16 +85,6 @@
       background-color: #ff3333;
       transform: rotate(-45deg);
       box-shadow: 0 0 8px #ff0000;
-    }
-
-    /* Active Glow Effect */
-    .active-glow-red {
-      box-shadow: 0 0 15px rgba(232, 64, 87, 0.8) inset, 0 0 15px rgba(232, 64, 87, 0.6);
-      border-color: #e84057 !important;
-    }
-    .active-glow-blue {
-      box-shadow: 0 0 15px rgba(10, 200, 185, 0.8) inset, 0 0 15px rgba(10, 200, 185, 0.6);
-      border-color: #0ac8b9 !important;
     }
 
     /* Custom scrollbar for admin panel */
@@ -180,7 +172,7 @@
         <span class="font-bold text-emerald-400 block mb-1">
           <i class="fa-solid fa-file-csv"></i> Googleスプレッドシート連携
         </span>
-        <p class="text-[10px] text-slate-400 mb-2">公開（リンクを知っている全員）されたスプレッドシートからチーム名・選手名を取得します</p>
+        <p class="text-[10px] text-slate-400 mb-2">公開されたスプレッドシートからチーム名・選手名を取得します</p>
         <div class="space-y-2">
           <div>
             <label class="text-slate-400 block mb-0.5">スプレッドシートID または URL</label>
@@ -193,15 +185,6 @@
           <button onclick="fetchSpreadsheetData()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded transition flex items-center justify-center gap-1">
             <i class="fa-solid fa-cloud-arrow-down"></i> スプレッドシートから取得・反映
           </button>
-        </div>
-      </div>
-
-      <!-- Sync Settings -->
-      <div class="bg-slate-900 p-3 rounded border border-slate-800">
-        <span class="font-bold text-lolGold block mb-1">ネットワーク同期ルーム ID</span>
-        <p class="text-[10px] text-slate-400 mb-2">PC間・別ネットワークで同期する場合、同一のIDを入力してください</p>
-        <div>
-          <input type="text" id="inputSyncTopic" value="lol_draft_sync_room_2026" oninput="changeSyncTopic()" class="w-full bg-slate-950 border border-slate-700 p-1.5 rounded text-white font-mono">
         </div>
       </div>
 
@@ -460,11 +443,10 @@
   <!-- JAVASCRIPT APPLICATION LOGIC -->
   <script>
     const DDRAGON_VER = '14.10.1';
-    const DEFAULT_SYNC_TOPIC = 'lol_draft_sync_room_2026';
-    const CLIENT_ID = Math.random().toString(36).substring(2, 9);
-    let currentSyncTopic = localStorage.getItem('lol_sync_topic') || DEFAULT_SYNC_TOPIC;
+    const CLIENT_ID = 'client_' + Math.random().toString(36).substring(2, 9);
     let syncBroadcastChannel = null;
     let lastBroadcastTime = 0;
+    let syncBroadcastDebounce = null;
 
     // OBS URL Role check (?obs)
     const urlParams = new URLSearchParams(window.location.search);
@@ -703,14 +685,6 @@
       document.execCommand('copy');
       document.body.removeChild(dummy);
       alert('OBS用URLをクリップボードにコピーしました！\nOBSのブラウザソースURLに貼り付けてご利用ください。\n\n' + obsUrl);
-    }
-
-    function changeSyncTopic() {
-      const input = document.getElementById('inputSyncTopic');
-      if (input && input.value.trim() !== '') {
-        currentSyncTopic = input.value.trim();
-        localStorage.setItem('lol_sync_topic', currentSyncTopic);
-      }
     }
 
     function formatChampName(name) {
@@ -1116,10 +1090,15 @@
       }
     }
 
+    // Public Realtime Relay Service for Instant Synchronizing
+    let pusherClient = null;
+    let pusherChannel = null;
+
     function broadcastState(state) {
+      const timestamp = Date.now();
       const payload = {
         sender: CLIENT_ID,
-        timestamp: Date.now(),
+        timestamp: timestamp,
         state: state
       };
       
@@ -1129,63 +1108,85 @@
       if (syncBroadcastChannel) {
         try {
           syncBroadcastChannel.postMessage(payload);
-        } catch (e) {
-          console.error("BroadcastChannel error:", e);
-        }
+        } catch (e) {}
+      }
+
+      // Public API Sync (ntfy.sh Server-Sent Events / Push Relay)
+      if (syncBroadcastDebounce) clearTimeout(syncBroadcastDebounce);
+      syncBroadcastDebounce = setTimeout(() => {
+        fetch('https://ntfy.sh/lol_kyoto_draft_sync_room_2026', {
+          method: 'POST',
+          body: jsonStr,
+          headers: { 'Title': 'StateUpdate' }
+        }).catch(err => console.debug('Sync relay post:', err));
+      }, 50);
+    }
+
+    function applyIncomingState(incomingState, timestamp) {
+      if (!incomingState) return;
+      if (timestamp && timestamp <= lastBroadcastTime) return;
+      
+      if (timestamp) lastBroadcastTime = timestamp;
+      appState = incomingState;
+      renderApp();
+      if (!isObsRole) {
+        updateAdminInputsFromState();
       }
     }
 
     function initSyncSystem() {
+      // 1. Same Browser Tab / OBS Local Memory Broadcast
       try {
-        syncBroadcastChannel = new BroadcastChannel('lol_draft_channel_' + currentSyncTopic);
+        syncBroadcastChannel = new BroadcastChannel('lol_draft_sync_channel');
         syncBroadcastChannel.onmessage = (event) => {
           if (event.data && event.data.sender !== CLIENT_ID && event.data.state) {
-            lastBroadcastTime = event.data.timestamp || Date.now();
-            appState = event.data.state;
-            renderApp();
-            if (!isObsRole) {
-              updateAdminInputsFromState();
-            }
+            applyIncomingState(event.data.state, event.data.timestamp);
           }
         };
-      } catch (e) {
-        console.warn("BroadcastChannel not supported", e);
-      }
+      } catch (e) {}
 
+      // 2. LocalStorage Change Event (Immediate within same PC)
       window.addEventListener('storage', (e) => {
         if (e.key === 'lol_draft_sync_state' && e.newValue) {
           try {
             const data = JSON.parse(e.newValue);
-            if (data.sender !== CLIENT_ID && data.state && data.timestamp > lastBroadcastTime) {
-              lastBroadcastTime = data.timestamp;
-              appState = data.state;
-              renderApp();
-              if (!isObsRole) {
-                updateAdminInputsFromState();
-              }
+            if (data.sender !== CLIENT_ID && data.state) {
+              applyIncomingState(data.state, data.timestamp);
             }
-          } catch (err) {
-            console.error("Storage sync parse error:", err);
-          }
+          } catch (err) {}
         }
       });
 
+      // 3. Ultra Fast Local Polling (Every 50ms fallback)
       setInterval(() => {
         const savedState = localStorage.getItem('lol_draft_sync_state');
         if (savedState) {
           try {
             const data = JSON.parse(savedState);
             if (data.sender !== CLIENT_ID && data.state && data.timestamp > lastBroadcastTime) {
-              lastBroadcastTime = data.timestamp;
-              appState = data.state;
-              renderApp();
-              if (!isObsRole) {
-                updateAdminInputsFromState();
-              }
+              applyIncomingState(data.state, data.timestamp);
             }
           } catch (e) {}
         }
-      }, 100);
+      }, 50);
+
+      // 4. Global Web Push Relay (Cross-Device & GitHub Pages to OBS Cross-Network)
+      try {
+        const eventSource = new EventSource('https://ntfy.sh/lol_kyoto_draft_sync_room_2026/sse');
+        eventSource.onmessage = (event) => {
+          try {
+            const parsed = JSON.parse(event.data);
+            if (parsed && parsed.message) {
+              const payload = JSON.parse(parsed.message);
+              if (payload && payload.sender !== CLIENT_ID && payload.state) {
+                applyIncomingState(payload.state, payload.timestamp);
+              }
+            }
+          } catch (e) {}
+        };
+      } catch (e) {
+        console.debug('SSE disabled or unallowed', e);
+      }
     }
 
     window.onload = function() {
@@ -1196,9 +1197,7 @@
           if (parsed && parsed.state) {
             appState = parsed.state;
           }
-        } catch (e) {
-          console.error("Failed to parse initial saved state", e);
-        }
+        } catch (e) {}
       }
 
       ensureValidState();
