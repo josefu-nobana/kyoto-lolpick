@@ -1130,8 +1130,11 @@
       lastBroadcastTime = Date.now();
       const payload = { senderId: CLIENT_ID, timestamp: lastBroadcastTime, data: newState };
       
-      // 1. LocalStorage Sync
-      localStorage.setItem('lol_draft_app_state', JSON.stringify(newState));
+      // 1. LocalStorage Sync (Instant cross-window trigger)
+      try {
+        localStorage.setItem('lol_draft_app_state', JSON.stringify(newState));
+        localStorage.setItem('lol_draft_ping', lastBroadcastTime.toString());
+      } catch(e) {}
 
       // 2. BroadcastChannel Sync
       if (syncBroadcastChannel) {
@@ -1142,7 +1145,7 @@
         }
       }
 
-      // 3. Remote Server Push (ntfy.sh) for Cross-Network / Separate Browser Windows
+      // 3. Remote Server Push (ntfy.sh) for Cross-Network / Separate Browsers
       fetch(`https://ntfy.sh/${currentSyncTopic}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1150,7 +1153,7 @@
       }).catch(err => console.warn("Remote sync push error:", err));
     }
 
-    // --- ENHANCED REALTIME SYNC SYSTEM FOR DEPLOYED WEBSITES (GitHub Pages Optimized) ---
+    // --- ENHANCED REALTIME SYNC SYSTEM FOR DEPLOYED WEBSITES ---
     function initSyncSystem() {
       // Restore cached state from local storage if exists
       const savedState = localStorage.getItem('lol_draft_app_state');
@@ -1176,18 +1179,35 @@
         console.warn("BroadcastChannel not supported", e);
       }
 
-      // 2. Window LocalStorage Event (cross-window sync)
+      // 2. Window LocalStorage Event (cross-window/OBS Browser Source sync)
       window.addEventListener('storage', (e) => {
-        if (e.key === 'lol_draft_app_state' && e.newValue) {
-          try {
-            appState = JSON.parse(e.newValue);
-            renderApp();
-            updateAdminInputsFromState();
-          } catch(err) {
-            console.warn("Storage sync error", err);
+        if (e.key === 'lol_draft_app_state' || e.key === 'lol_draft_ping') {
+          const freshState = localStorage.getItem('lol_draft_app_state');
+          if (freshState) {
+            try {
+              appState = JSON.parse(freshState);
+              renderApp();
+              updateAdminInputsFromState();
+            } catch(err) {
+              console.warn("Storage sync error", err);
+            }
           }
         }
       });
+
+      // Periodic check for seamless instant sync in OBS browser dock
+      setInterval(() => {
+        const freshState = localStorage.getItem('lol_draft_app_state');
+        if (freshState) {
+          try {
+            const parsed = JSON.parse(freshState);
+            if (JSON.stringify(parsed) !== JSON.stringify(appState)) {
+              appState = parsed;
+              renderApp();
+            }
+          } catch(e) {}
+        }
+      }, 500);
 
       // 3. ntfy SSE Setup
       setupNtfySSE(currentSyncTopic);
@@ -1247,9 +1267,6 @@
         if (panel) panel.classList.remove('hidden');
       }
     };
-  </script>
-</body>
-</html>
   </script>
 </body>
 </html>
