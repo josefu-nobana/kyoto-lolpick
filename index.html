@@ -120,14 +120,12 @@
 </head>
 <body class="bg-black text-white">
 
-  <!-- TOP OBS CONTROL BAR REMOVED FOR CLEAN BROADCAST OUTPUT -->
-
-  <!-- ADMIN MANAGEMENT PANEL (Floating Drawer Trigger Button) -->
-  <button onclick="toggleAdminPanel()" class="fixed top-2 left-2 z-50 bg-slate-900/80 hover:bg-slate-800 text-lolGold border border-slate-700/80 rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition opacity-30 hover:opacity-100" title="管理パネル">
+  <!-- ADMIN MANAGEMENT PANEL TRIGGER BUTTON (Hidden in OBS mode) -->
+  <button id="adminGearBtn" onclick="toggleAdminPanel()" class="fixed top-2 left-2 z-50 bg-slate-900/80 hover:bg-slate-800 text-lolGold border border-slate-700/80 rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition opacity-30 hover:opacity-100" title="管理パネル">
     <i class="fa-solid fa-gear text-xs"></i>
   </button>
 
-  <!-- ADMIN MANAGEMENT PANEL (Modal/Sidebar) -->
+  <!-- ADMIN MANAGEMENT PANEL -->
   <div id="adminPanel" class="fixed top-4 left-4 z-50 w-96 max-h-[90vh] bg-slate-950/95 border-2 border-lolGold rounded-xl p-4 shadow-2xl overflow-y-auto custom-scroll hidden backdrop-blur-lg">
     <div class="flex justify-between items-center border-b border-slate-800 pb-2 mb-3">
       <h3 class="font-orbitron font-bold text-lolGold text-base flex items-center gap-2">
@@ -155,12 +153,12 @@
         </div>
       </div>
 
-      <!-- CHROMATIC KEY (GREEN BACK) SETTINGS -->
+      <!-- CHROMATIC KEY SETTINGS (Target Caster Window Only) -->
       <div class="bg-slate-900 p-3 rounded border border-slate-800">
         <span class="font-bold text-lolGold block mb-1">
-          <i class="fa-solid fa-wand-magic-sparkles"></i> OBS クロマキー背景設定
+          <i class="fa-solid fa-wand-magic-sparkles"></i> 実況解説枠 クロマキー背景設定
         </span>
-        <p class="text-[10px] text-slate-400 mb-2">OBSで透過・切り抜き処理をするための背景色を選択できます</p>
+        <p class="text-[10px] text-slate-400 mb-2">中央の「実況解説カメラ枠」の内側のみを単色に変更し、OBS側でクロマキー切り抜きできます</p>
         <div class="grid grid-cols-4 gap-1.5">
           <button onclick="setChromaKeyBg('default')" class="bg-slate-800 hover:bg-slate-700 text-white p-1.5 rounded border border-slate-700 text-[10px] font-bold">
             デフォルト
@@ -237,7 +235,7 @@
         </div>
       </div>
 
-      <!-- PLAYER & PICKS (SELECT SYSTEM) -->
+      <!-- PLAYER & PICKS -->
       <div class="bg-slate-900 p-3 rounded border border-slate-800">
         <span class="font-bold text-lolGold block mb-1">メインピック 選択 (5 vs 5)</span>
         <p class="text-[10px] text-slate-400 mb-2">※ チャンピオンを一覧から選択してください</p>
@@ -364,7 +362,7 @@
             </div>
           </div>
 
-          <!-- FEARLESS DRAFT SECTION & CENTER LOGO -->
+          <!-- FEARLESS DRAFT SECTION -->
           <div class="w-full h-[180px] bg-slate-950/80 rounded-xl border border-slate-800/80 p-3 flex items-end justify-between backdrop-blur-md relative overflow-visible">
             
             <!-- RED TEAM FEARLESS (LEFT) -->
@@ -372,7 +370,6 @@
               <span class="text-[11px] font-orbitron font-extrabold text-rose-500 tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
                 <span class="w-2 h-2 rounded-full bg-rose-500"></span> FEARLESS DRAFT
               </span>
-              <!-- Stack items bottom-to-top in a 5-column grid without scrolling -->
               <div id="redFearlessContainer" class="grid grid-cols-5 gap-1.5 p-0.5 justify-items-start items-end">
                 <!-- 5 Champion Icons per row, stacked upward -->
               </div>
@@ -383,7 +380,6 @@
               <span class="text-[11px] font-orbitron font-extrabold text-teal-400 tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
                 FEARLESS DRAFT <span class="w-2 h-2 rounded-full bg-teal-400"></span>
               </span>
-              <!-- Stack items bottom-to-top in a 5-column grid without scrolling -->
               <div id="blueFearlessContainer" class="grid grid-cols-5 gap-1.5 p-0.5 justify-items-end items-end">
                 <!-- 5 Champion Icons per row, stacked upward -->
               </div>
@@ -465,17 +461,16 @@
   <script>
     const DDRAGON_VER = '14.10.1';
     const DEFAULT_SYNC_TOPIC = 'lol_draft_sync_room_2026';
-    const CLIENT_ID = Math.random().toString(36).substring(2, 9); // 自クライアント判定用ID
+    const CLIENT_ID = Math.random().toString(36).substring(2, 9);
     let currentSyncTopic = localStorage.getItem('lol_sync_topic') || DEFAULT_SYNC_TOPIC;
     let syncBroadcastChannel = null;
-    let sseEventSource = null;
     let lastBroadcastTime = 0;
 
-    // URLパラメータで ?obs が指定されているかチェック（指定なしの場合はデフォルト管理画面）
+    // OBS URL Role check (?obs)
     const urlParams = new URLSearchParams(window.location.search);
     const isObsRole = urlParams.has('obs');
 
-    // Champion Master List with Japanese Names for Display
+    // Champion Master List with Japanese Katakana & English IDs
     const CHAMPION_MAP = [
       { id: "Aatrox", name: "エイトロックス" },
       { id: "Ahri", name: "アーリ" },
@@ -652,12 +647,12 @@
       { id: "Zyra", name: "ザイラ" }
     ].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 
-    // Application State Matching Reference Image
+    // Application State
     let appState = {
       gameCode: "D6-G2",
       patch: "PATCH 26.22",
       timer: 24,
-      chromaBg: "default", // default | green | blue | magenta
+      chromaBg: "default",
 
       redTeam: {
         name: "CC CORE",
@@ -667,7 +662,7 @@
           { player: "k4sen", champ: "Lillia", active: false },
           { player: "Kuzuha", champ: "Morgana", active: false },
           { player: "Tatsumaki Chise", champ: "Janna", active: false },
-          { player: "Konkun Aria", champ: "Lulu", active: true }
+          { player: "Konkun Aria", champ: "Lulu", active: false }
         ],
         fearless: ["Renekton", "JarvanIV", "Syndra", "Lucian"],
         bans: ["Caitlyn", "Maokai", "KSante", "Jayce", "Rumble"]
@@ -688,7 +683,6 @@
       }
     };
 
-    // Helper functions for UI
     function toggleAdminPanel() {
       const panel = document.getElementById('adminPanel');
       if (panel) panel.classList.toggle('hidden');
@@ -716,17 +710,15 @@
       if (input && input.value.trim() !== '') {
         currentSyncTopic = input.value.trim();
         localStorage.setItem('lol_sync_topic', currentSyncTopic);
-        setupNtfySSE(currentSyncTopic);
       }
     }
 
-    // Standardize Champion Name to DDragon Image Key
     function formatChampName(name) {
       if (!name) return "";
       let clean = name.trim();
       const lower = clean.toLowerCase();
       
-      if (lower === 'khazix' || lower === "kha'zix" || lower === 'khazix') return 'Khazix';
+      if (lower === 'khazix' || lower === "kha'zix") return 'KhaZix';
       if (lower === 'zaahen' || lower === 'zahen' || lower === 'ザーヘン') return 'Zaahen';
       if (lower === 'locke' || lower === 'yole' || lower === 'ロック') return 'Locke';
       if (lower === 'yunara' || lower === 'ユナラ') return 'Yunara';
@@ -761,7 +753,6 @@
       return `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VER}/img/champion/${key}.png`;
     }
 
-    // Generate Select Options with Japanese Katakana Display
     function buildChampOptionsHtml(selectedChamp) {
       let options = `<option value="">(未選択)</option>`;
       CHAMPION_MAP.forEach(champ => {
@@ -771,9 +762,7 @@
       return options;
     }
 
-    // Render Admin Panel Control Selects
     function renderAdminSelectInputs() {
-      // 1. Player Picks Inputs
       const playerContainer = document.getElementById('playerInputsContainer');
       if (playerContainer) {
         let html = '';
@@ -786,16 +775,12 @@
               <div class="flex justify-between items-center text-[11px]">
                 <span class="font-bold text-slate-400">P${i+1} 枠設定</span>
               </div>
-
-              <!-- RED Player Pick -->
               <div class="grid grid-cols-2 gap-1 items-center">
                 <input type="text" id="inputRedPlayer_${i}" value="${redP.player}" oninput="updateStateFromInputs()" placeholder="RED プレイヤー名" class="bg-slate-900 border border-rose-950 p-1 rounded text-rose-300 font-bold text-[11px]">
                 <select id="selectRedChamp_${i}" onchange="updateStateFromInputs()" class="bg-slate-900 border border-rose-950 p-1 rounded text-white text-[11px]">
                   ${buildChampOptionsHtml(redP.champ)}
                 </select>
               </div>
-
-              <!-- BLUE Player Pick -->
               <div class="grid grid-cols-2 gap-1 items-center">
                 <input type="text" id="inputBluePlayer_${i}" value="${blueP.player}" oninput="updateStateFromInputs()" placeholder="BLUE プレイヤー名" class="bg-slate-900 border border-teal-950 p-1 rounded text-teal-300 font-bold text-[11px]">
                 <select id="selectBlueChamp_${i}" onchange="updateStateFromInputs()" class="bg-slate-900 border border-teal-950 p-1 rounded text-white text-[11px]">
@@ -808,11 +793,8 @@
         playerContainer.innerHTML = html;
       }
 
-      // 2. Fearless Checkbox Lists
       renderFearlessCheckboxes('red', appState.redTeam.fearless);
       renderFearlessCheckboxes('blue', appState.blueTeam.fearless);
-
-      // 3. Bans Select Boxes
       renderBansSelects();
     }
 
@@ -876,7 +858,6 @@
       appState.blueTeam.name = blueTeamName;
       appState.blueTeam.coach = blueCoachName;
 
-      // Read Picks
       for (let i = 0; i < 5; i++) {
         const rPlayer = document.getElementById(`inputRedPlayer_${i}`)?.value || `Player ${i+1}`;
         const rChamp = document.getElementById(`selectRedChamp_${i}`)?.value || '';
@@ -889,7 +870,6 @@
         appState.blueTeam.picks[i].champ = bChamp;
       }
 
-      // Read Fearless
       const redFearless = [];
       document.querySelectorAll('.fearless-checkbox-red:checked').forEach(cb => redFearless.push(cb.value));
       appState.redTeam.fearless = redFearless;
@@ -898,7 +878,6 @@
       document.querySelectorAll('.fearless-checkbox-blue:checked').forEach(cb => blueFearless.push(cb.value));
       appState.blueTeam.fearless = blueFearless;
 
-      // Read Bans
       for (let i = 0; i < 5; i++) {
         appState.redTeam.bans[i] = document.getElementById(`selectRedBan_${i}`)?.value || '';
         appState.blueTeam.bans[i] = document.getElementById(`selectBlueBan_${i}`)?.value || '';
@@ -923,7 +902,6 @@
       renderAdminSelectInputs();
     }
 
-    // Google Spreadsheet Integration
     async function fetchSpreadsheetData() {
       const urlOrId = document.getElementById('inputSheetId')?.value.trim();
       const sheetName = document.getElementById('inputSheetName')?.value.trim();
@@ -984,16 +962,13 @@
       }
     }
 
-    // Main UI Render Method
     function renderApp() {
       ensureValidState();
 
-      // Apply Chroma Key Background Color ONLY to Caster Area
       const canvas = document.getElementById('broadcastCanvas');
       const casterWindow = document.getElementById('casterWindow');
 
       if (canvas) {
-        // 全体の背景は常に本来の綺麗なダークグラデーションに固定
         canvas.style.background = 'linear-gradient(180deg, #070a0f 0%, #0c121d 100%)';
       }
 
@@ -1005,11 +980,10 @@
         } else if (appState.chromaBg === 'magenta') {
           casterWindow.style.backgroundColor = '#FF00FF';
         } else {
-          casterWindow.style.backgroundColor = 'rgba(2, 6, 23, 0.3)'; // デフォルト（黒半透明）
+          casterWindow.style.backgroundColor = 'rgba(2, 6, 23, 0.3)';
         }
       }
 
-      // Top Header
       document.getElementById('displayRedTeam').textContent = appState.redTeam.name;
       document.getElementById('displayRedCoach').textContent = appState.redTeam.coach;
       document.getElementById('displayBlueTeam').textContent = appState.blueTeam.name;
@@ -1018,16 +992,11 @@
       document.getElementById('displayRedLogo').textContent = (appState.redTeam.name || 'CC').substring(0, 2).toUpperCase();
       document.getElementById('displayBlueLogo').textContent = (appState.blueTeam.name || 'IT').substring(0, 2).toUpperCase();
 
-      // 1. Red Picks
       renderPicks('redPicksContainer', appState.redTeam.picks, 'red');
-      // 2. Blue Picks
       renderPicks('bluePicksContainer', appState.blueTeam.picks, 'blue');
-
-      // 3. Fearless Picks
       renderFearlessIcons('redFearlessContainer', appState.redTeam.fearless, 'red');
       renderFearlessIcons('blueFearlessContainer', appState.blueTeam.fearless, 'blue');
 
-      // 4. Bans
       renderBans('redBansPhase1', appState.redTeam.bans.slice(0, 3));
       renderBans('redBansPhase2', appState.redTeam.bans.slice(3, 5));
       renderBans('blueBansPhase1', appState.blueTeam.bans.slice(0, 3));
@@ -1051,15 +1020,10 @@
 
         html += `
           <div class="relative w-full h-[145px] rounded-xl border-2 ${borderGlowClass} ${activeClass} bg-slate-950 overflow-hidden shadow-lg transition-all duration-300 flex items-center">
-            <!-- Splash Art Background -->
             <div class="absolute inset-0 w-full h-full bg-cover bg-center transition-transform duration-500 hover:scale-105"
                  style="background-image: url('${splashUrl}');">
             </div>
-            
-            <!-- Side Color Overlay Gradient -->
             <div class="absolute inset-0 ${overlayGradient}"></div>
-
-            <!-- Content Container -->
             <div class="relative z-10 w-full px-5 flex flex-col justify-between h-full py-4 ${isRed ? 'items-start text-left' : 'items-end text-right'}">
               <div>
                 <span class="font-orbitron font-extrabold text-2xl text-white tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] uppercase block">
@@ -1152,7 +1116,6 @@
       }
     }
 
-    // Real-time Sync System Initialization
     function broadcastState(state) {
       const payload = {
         sender: CLIENT_ID,
@@ -1173,11 +1136,11 @@
     }
 
     function initSyncSystem() {
-      // 1. BroadcastChannel
       try {
         syncBroadcastChannel = new BroadcastChannel('lol_draft_channel_' + currentSyncTopic);
         syncBroadcastChannel.onmessage = (event) => {
           if (event.data && event.data.sender !== CLIENT_ID && event.data.state) {
+            lastBroadcastTime = event.data.timestamp || Date.now();
             appState = event.data.state;
             renderApp();
             if (!isObsRole) {
@@ -1189,12 +1152,12 @@
         console.warn("BroadcastChannel not supported", e);
       }
 
-      // 2. LocalStorage Event listener (for multi-tab sync)
       window.addEventListener('storage', (e) => {
         if (e.key === 'lol_draft_sync_state' && e.newValue) {
           try {
             const data = JSON.parse(e.newValue);
-            if (data.sender !== CLIENT_ID && data.state) {
+            if (data.sender !== CLIENT_ID && data.state && data.timestamp > lastBroadcastTime) {
+              lastBroadcastTime = data.timestamp;
               appState = data.state;
               renderApp();
               if (!isObsRole) {
@@ -1206,31 +1169,53 @@
           }
         }
       });
+
+      setInterval(() => {
+        const savedState = localStorage.getItem('lol_draft_sync_state');
+        if (savedState) {
+          try {
+            const data = JSON.parse(savedState);
+            if (data.sender !== CLIENT_ID && data.state && data.timestamp > lastBroadcastTime) {
+              lastBroadcastTime = data.timestamp;
+              appState = data.state;
+              renderApp();
+              if (!isObsRole) {
+                updateAdminInputsFromState();
+              }
+            }
+          } catch (e) {}
+        }
+      }, 100);
     }
 
-    // Application Bootstrap On Load
     window.onload = function() {
-      // Check stored state
-      const savedState = localStorage.getItem('lol_draft_sync_state');
-      if (savedState) {
+      const saved = localStorage.getItem('lol_draft_sync_state');
+      if (saved) {
         try {
-          const parsed = JSON.parse(savedState);
+          const parsed = JSON.parse(saved);
           if (parsed && parsed.state) {
             appState = parsed.state;
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error("Failed to parse initial saved state", e);
+        }
+      }
+
+      ensureValidState();
+      renderApp();
+
+      if (isObsRole) {
+        const panel = document.getElementById('adminPanel');
+        const gearBtn = document.getElementById('adminGearBtn');
+        if (panel) panel.classList.add('hidden');
+        if (gearBtn) gearBtn.classList.add('hidden');
+      } else {
+        const panel = document.getElementById('adminPanel');
+        if (panel) panel.classList.remove('hidden');
+        updateAdminInputsFromState();
       }
 
       initSyncSystem();
-
-      // OBSモード（?obs）であれば管理画面パネルを非表示、通常時なら管理パネルを初期化
-      if (!isObsRole) {
-        updateAdminInputsFromState();
-        const panel = document.getElementById('adminPanel');
-        if (panel) panel.classList.remove('hidden');
-      }
-
-      renderApp();
     };
   </script>
 </body>
