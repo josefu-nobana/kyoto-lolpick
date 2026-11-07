@@ -155,6 +155,28 @@
         </div>
       </div>
 
+      <!-- CHROMATIC KEY (GREEN BACK) SETTINGS -->
+      <div class="bg-slate-900 p-3 rounded border border-slate-800">
+        <span class="font-bold text-lolGold block mb-1">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> OBS クロマキー背景設定
+        </span>
+        <p class="text-[10px] text-slate-400 mb-2">OBSで透過・切り抜き処理をするための背景色を選択できます</p>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button onclick="setChromaKeyBg('default')" class="bg-slate-800 hover:bg-slate-700 text-white p-1.5 rounded border border-slate-700 text-[10px] font-bold">
+            デフォルト
+          </button>
+          <button onclick="setChromaKeyBg('green')" class="bg-emerald-600 hover:bg-emerald-500 text-white p-1.5 rounded text-[10px] font-bold">
+            グリーン
+          </button>
+          <button onclick="setChromaKeyBg('blue')" class="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded text-[10px] font-bold">
+            ブルー
+          </button>
+          <button onclick="setChromaKeyBg('magenta')" class="bg-fuchsia-600 hover:bg-fuchsia-500 text-white p-1.5 rounded text-[10px] font-bold">
+            マゼンタ
+          </button>
+        </div>
+      </div>
+
       <!-- GOOGLE SPREADSHEET INTEGRATION -->
       <div class="bg-emerald-950/40 p-3 rounded border border-emerald-700/60">
         <span class="font-bold text-emerald-400 block mb-1">
@@ -635,6 +657,7 @@
       gameCode: "D6-G2",
       patch: "PATCH 26.22",
       timer: 24,
+      chromaBg: "default", // default | green | blue | magenta
 
       redTeam: {
         name: "CC CORE",
@@ -885,6 +908,12 @@
       broadcastState(appState);
     }
 
+    function setChromaKeyBg(colorType) {
+      appState.chromaBg = colorType;
+      renderApp();
+      broadcastState(appState);
+    }
+
     function updateAdminInputsFromState() {
       if (document.getElementById('inputRedTeam')) document.getElementById('inputRedTeam').value = appState.redTeam.name;
       if (document.getElementById('inputRedCoach')) document.getElementById('inputRedCoach').value = appState.redTeam.coach;
@@ -958,6 +987,20 @@
     // Main UI Render Method
     function renderApp() {
       ensureValidState();
+
+      // Apply Chroma Key Background Color
+      const canvas = document.getElementById('broadcastCanvas');
+      if (canvas) {
+        if (appState.chromaBg === 'green') {
+          canvas.style.background = '#00FF00';
+        } else if (appState.chromaBg === 'blue') {
+          canvas.style.background = '#0000FF';
+        } else if (appState.chromaBg === 'magenta') {
+          canvas.style.background = '#FF00FF';
+        } else {
+          canvas.style.background = 'linear-gradient(180deg, #070a0f 0%, #0c121d 100%)';
+        }
+      }
 
       // Top Header
       document.getElementById('displayRedTeam').textContent = appState.redTeam.name;
@@ -1113,6 +1156,7 @@
       if (!appState || typeof appState !== 'object') {
         appState = {};
       }
+      if (!appState.chromaBg) appState.chromaBg = "default";
       if (!appState.redTeam) appState.redTeam = { name: "CC CORE", coach: "COACH: CEROS", picks: [], fearless: [], bans: [] };
       if (!appState.blueTeam) appState.blueTeam = { name: "IT CORE", coach: "COACH: EUGEO", picks: [], fearless: [], bans: [] };
       
@@ -1271,7 +1315,5 @@
       }
     };
   </script>
-</body>
-</html>
 </body>
 </html>
